@@ -26,8 +26,8 @@ fn main() -> Result<()> {
         .take()
         .context("unable to take stdin for control process")?;
 
-    control_stdin.write_all(b"new-window -d -n freki ssh freki\n")?;
-    control_stdin.write_all(b"new-window -d -n badb ssh badb\n")?;
+    control_stdin.write_all(b"new-window -d -n m0001 ssh m0001\n")?;
+    control_stdin.write_all(b"new-window -d -n m0002 ssh m0002\n")?;
 
     ui_tmux.wait()?;
     control.kill()?;
