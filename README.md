@@ -1,6 +1,8 @@
+# DOES NOT WORK, YET!
+
 # bdsh
 
-Basically, [dsh](https://www.netfort.gr.jp/~dancer/software/dsh.html.en) except with useful output, and the ability to go interactive if needed. 
+Will be, basically, [dsh](https://www.netfort.gr.jp/~dancer/software/dsh.html.en) except with useful output, and the ability to go interactive if needed.
 
 ## basic plan
 
@@ -24,5 +26,3 @@ Basically, [dsh](https://www.netfort.gr.jp/~dancer/software/dsh.html.en) except 
 * [clusterssh](https://github.com/duncs/clusterssh)
 * [pussh](https://github.com/bearstech/pussh)
 * [pdsh](https://github.com/chaos/pdsh)
-
-
