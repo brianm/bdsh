@@ -2,15 +2,23 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
+use std::sync::mpsc::channel;
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, TmuxError>;
 
+#[derive(Debug)]
 pub struct Control {
     name: String,
     tmux: std::process::Child,
     stdin: std::process::ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
+}
+
+#[derive(Debug)]
+pub struct Window {
+    name: String,
+    id: String,
 }
 
 impl Control {
@@ -46,12 +54,50 @@ impl Control {
         Ok(c)
     }
 
+    pub fn new_window(&mut self, name: &str, command: Option<&str>) -> Result<Window> {
+        // use a convention where we send -P -F '@#{window_name} #{window_id}'
+        // to let us get the window id
+        let mut parts = vec![
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "'@ #{window_name} #{window_id}'",
+            "-n",
+            name,
+        ];
+        parts.extend(command.iter());
+        let line = parts.join(" ");
+
+        self.send(&format!("{}\n", line))?;
+
+        // now consume notifs until we get our window id
+        let mut id = String::new();
+        loop {
+            let n = self.consume_notification()?;
+            match n {
+                Notification::End => break,
+                Notification::Output(data) => {
+                    let (_, window_id) = data.split_once(" ").unwrap();
+                    id.push_str(window_id);
+                }
+                _ => continue,
+            }
+        }
+        Ok(Window {
+            name: name.into(),
+            id,
+        })
+    }
+
     fn consume_notification(&mut self) -> Result<Notification> {
         let mut buf = String::new();
         self.stdout
             .read_line(&mut buf)
             .map_err(TmuxError::IoError)?;
-        Ok(buf.parse()?)
+        let n = buf.parse()?;
+        println!("notif\t{:?}", n);
+        Ok(n)
     }
 
     pub fn kill(&mut self) -> Result<()> {
@@ -95,16 +141,20 @@ pub enum TmuxError {
 enum Notification {
     SessionChanged(String, String),
     Other(String, Option<String>),
+    Begin,
+    Output(String),
+    End,
 }
 
 impl FromStr for Notification {
     type Err = TmuxError;
 
     fn from_str(data: &str) -> Result<Notification> {
-        if data.is_empty() || !data.starts_with(r"%") {
-            return Err(TmuxError::NotifParseError(
-                "invalid input, not a notification string".into(),
-            ));
+        if data.is_empty() || !(data.starts_with(r"%") || data.starts_with(r"@")) {
+            return Err(TmuxError::NotifParseError(format!(
+                "parse error: '{}'",
+                data
+            )));
         }
         let data = data.trim_end_matches("\n"); // strip trailing newline
         let (notif_type, notif_data) = match data.split_once(" ") {
@@ -114,6 +164,9 @@ impl FromStr for Notification {
 
         match notif_type {
             "%session-changed" => Notification::session_changed(notif_data),
+            "%begin" => Ok(Notification::Begin),
+            "%end" => Ok(Notification::End),
+            "@" => Ok(Notification::Output(notif_data.unwrap_or_default())),
             _ => Ok(Notification::Other(notif_type.into(), notif_data)),
         }
     }

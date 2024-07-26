@@ -10,8 +10,8 @@ fn main() -> Result<()> {
     let cmd = args.first().unwrap();
     if args.len() == 2 {
         // invoked from self inside tmux
-        println!("sleeping for 30, C-c to terminate early");
-        std::thread::sleep(std::time::Duration::from_secs(30));
+        println!("sleeping for 10, C-c to terminate early");
+        std::thread::sleep(std::time::Duration::from_secs(10));
         exit(0);
     }
 
@@ -21,8 +21,12 @@ fn main() -> Result<()> {
 
     let mut ui_tmux = Command::new("tmux").args(["attach", "-t", &name]).spawn()?;
 
-    control.send("new-window -d -n m0001 sleep 3\n")?;
-    control.send("new-window -d -n m0002 sleep 4\n")?;
+    dbg!(control.new_window("m0001", Some("sleep 4"))?);
+    dbg!(control.new_window("m0002", Some("sleep 4"))?);
+    dbg!(control.new_window("m0003", Some("sleep 4"))?);
+    dbg!(control.new_window("m0004", Some("sleep 4"))?);
+    dbg!(control.new_window("m0005", Some("sleep 4"))?);
+    dbg!(control.new_window("m0006", Some("sleep 4"))?);
 
     ui_tmux.wait()?;
     control.kill()?;
