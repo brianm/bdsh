@@ -25,6 +25,10 @@ bdsh defaults to running in "server mode", must do magical (hidden) incantation 
 
 By default, output directory is deleted on exit, but can be preserved with a flag. It will also look for a `.keep` which the client can drop in it, so you can decide to keep it interactively from within the client. In fact, the flag just causes a `.keep` to be created!
 
+We can write the command to a script (named `command`) which is just the command given to `bdsh` to run, prefixed by `ssh $SSH_OPTIONS $host`. We then run it as the command for the tmux window, piped into tee to capture logs:
+
+    new-window -d -n $host 'sh /tmp/test/tmp/freki/command | tee /tmp/test/freki/out.log'
+
 ## useful stuff
 
 ### if rust (which is overkill, but fun)
