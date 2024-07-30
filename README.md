@@ -27,7 +27,7 @@ By default, output directory is deleted on exit, but can be preserved with a fla
 
 We can write the command to a script (named `command`) which is just the command given to `bdsh` to run, prefixed by `ssh $SSH_OPTIONS $host`. We then run it as the command for the tmux window, piped into tee to capture logs:
 
-    new-window -d -n $host 'sh /tmp/test/tmp/freki/command | tee /tmp/test/freki/out.log'
+    new-window -d -n $host 'sh /tmp/test/freki/command | tee /tmp/test/freki/out.log'
 
 ## useful stuff
 
