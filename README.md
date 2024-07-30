@@ -31,6 +31,8 @@ We can write the command to a script (named `command`) which is just the command
 
 We can capture some basic stuff like timing and exit status in a metadata file in the output directory. Basically, track all state in some metadata files. need to decide if we want to use locks or just rely on file existing or not exsiting. Only file client should ever write to is `.keep`, which is only used at program exit, so no race condition there.
 
+Heck, `command` can capture timing and exit status, writing them to metadata files. This makes `command` a bit more complex, but it may be worth it to simplify things. It also makes it easy to debug if somethign goes wrong, you can fully replicate the remote run by going to the right directory and invoking `sh command`.
+
 ## useful stuff
 
 ### if rust (which is overkill, but fun)
