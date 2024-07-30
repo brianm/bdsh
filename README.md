@@ -29,6 +29,8 @@ We can write the command to a script (named `command`) which is just the command
 
     new-window -d -n $host 'sh /tmp/test/freki/command | tee /tmp/test/freki/out.log'
 
+We can capture some basic stuff like timing and exit status in a metadata file in the output directory. Basically, track all state in some metadata files. need to decide if we want to use locks or just rely on file existing or not exsiting. Only file client should ever write to is `.keep`, which is only used at program exit, so no race condition there.
+
 ## useful stuff
 
 ### if rust (which is overkill, but fun)
