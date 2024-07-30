@@ -2,7 +2,6 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use std::sync::mpsc::channel;
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, TmuxError>;
