@@ -1,14 +1,25 @@
 use anyhow::Result;
 use names::Generator;
 use std::env;
+use std::path::PathBuf;
 use std::process::{exit, Command};
 
 mod tmux;
 
 fn main() -> Result<()> {
-    if 1 == 1 {
-        exit(0);
-    }
+    // TODO add clap to take various arguments
+
+    // create a temp dir to work in, for now use argv[1]
+
+    // start control tmux against socket in temp dir
+
+    // fire up tmux instance in foreground in "watch this directory" mode
+
+    // Run commands a la `ssh freki $command | tee $bdsh_tmp/$host/out.log`
+    // so that we capture output and still get the nice tmux experience if input is needed
+
+    //
+
     let args: Vec<String> = env::args().collect();
     let cmd = args.first().unwrap();
     if args.len() == 2 {
@@ -35,4 +46,15 @@ fn main() -> Result<()> {
     control.kill()?;
     println!("done");
     Ok(())
+}
+
+struct Job {
+    /// Directory this job executes in
+    root: PathBuf,
+
+    /// hostname to run command on
+    host: String,
+
+    /// command to run
+    command: String,
 }
