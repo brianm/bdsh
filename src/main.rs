@@ -1,50 +1,43 @@
 use anyhow::Result;
-use names::Generator;
-use std::env;
+use clap::Parser;
 use std::path::PathBuf;
-use std::process::{exit, Command};
 
 mod tmux;
 
+#[derive(Parser, Debug)]
+#[command(name = "bdsh", about = "Better Distributed Shell")]
+struct Cli {
+    /// Host specification: inline (h1,h2) or @file/@executable
+    host_spec: String,
+
+    /// Filter hosts by column/field value
+    #[arg(long = "where")]
+    where_clause: Option<String>,
+
+    /// Column number for hostname in tabular data (1-indexed)
+    #[arg(long, default_value = "1")]
+    host_col: usize,
+
+    /// JSON pointer to hostname field in JSON/YAML objects
+    #[arg(long)]
+    host_ptr: Option<String>,
+
+    /// Output directory (default: temp)
+    #[arg(short, long)]
+    output_dir: Option<PathBuf>,
+
+    /// Keep output directory on exit
+    #[arg(short, long)]
+    keep: bool,
+
+    /// Command to run on all hosts
+    #[arg(last = true, required = true)]
+    command: Vec<String>,
+}
+
 fn main() -> Result<()> {
-    // TODO add clap to take various arguments
-
-    // create a temp dir to work in, for now use argv[1]
-
-    // start control tmux against socket in temp dir
-
-    // fire up tmux instance in foreground in "watch this directory" mode
-
-    // Run commands a la `ssh freki $command | tee $bdsh_tmp/$host/out.log`
-    // so that we capture output and still get the nice tmux experience if input is needed
-
-    //
-
-    let args: Vec<String> = env::args().collect();
-    let cmd = args.first().unwrap();
-    if args.len() == 2 {
-        // invoked from self inside tmux
-        println!("sleeping for 10, C-c to terminate early");
-        std::thread::sleep(std::time::Duration::from_secs(10));
-        exit(0);
-    }
-
-    let name = Generator::default().next().unwrap();
-
-    let mut control = tmux::Control::start_session(&name, Some(format!("{} {}", cmd, name)))?;
-
-    let mut ui_tmux = Command::new("tmux").args(["attach", "-t", &name]).spawn()?;
-
-    dbg!(control.new_window("m0001", Some("sleep 4"))?);
-    dbg!(control.new_window("m0002", Some("sleep 4"))?);
-    dbg!(control.new_window("m0003", Some("sleep 4"))?);
-    dbg!(control.new_window("m0004", Some("sleep 4"))?);
-    dbg!(control.new_window("m0005", Some("sleep 4"))?);
-    dbg!(control.new_window("m0006", Some("sleep 4"))?);
-
-    ui_tmux.wait()?;
-    control.kill()?;
-    println!("done");
+    let cli = Cli::parse();
+    println!("{:#?}", cli);
     Ok(())
 }
 
