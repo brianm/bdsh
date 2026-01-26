@@ -1,10 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-
-mod tmux;
 
 #[derive(Parser, Debug)]
 #[command(name = "bdsh", about = "Better Distributed Shell")]
@@ -51,9 +49,7 @@ fn main() -> Result<()> {
         }
         None => {
             let tmp = tempfile::tempdir()?;
-            // Leak the tempdir so it doesn't get deleted when dropped
-            // We'll handle cleanup ourselves
-            tmp.into_path()
+            tmp.keep()
         }
     };
 
@@ -72,39 +68,55 @@ fn main() -> Result<()> {
 
     // Socket path for isolation
     let socket_path = output_dir.join("tmux.sock");
+    let socket_str = socket_path.to_str().unwrap();
 
-    // Start tmux control session with dedicated socket
-    let mut control = tmux::Control::start_session_with_socket(
-        &session_name,
-        &socket_path,
-        None,
-    )?;
+    // Create tmux session with first host
+    let mut hosts_iter = hosts.iter();
+    let first_host = hosts_iter.next().context("Need at least one host")?;
 
-    // Create a window for each host
-    for host in &hosts {
-        let host_dir = output_dir.join(host);
-        let log_file = host_dir.join("out.log");
+    let first_cmd = format!("ssh -t {} {}", first_host, cmd_str);
+    let first_log = output_dir.join(first_host).join("out.log");
 
-        // Command: ssh $host $cmd | tee $log_file
-        // Don't shell_escape here - new_window handles quoting for tmux
-        let window_cmd = format!(
-            "ssh {} {} 2>&1 | tee {}; echo 'Exit code:' $? >> {}",
-            host,
-            cmd_str,
-            log_file.display(),
-            log_file.display()
-        );
+    // Create detached session with first window (index 0)
+    tmux(&socket_str, &[
+        "new-session", "-d", "-s", &session_name, "-n", first_host, &first_cmd
+    ])?;
 
-        control.new_window(host, Some(&window_cmd))?;
+    // Set up pipe-pane to capture output (use index, not name, to avoid dot parsing issues)
+    tmux(&socket_str, &[
+        "pipe-pane", "-t", &format!("{}:0", session_name),
+        &format!("cat > {}", first_log.display())
+    ])?;
+
+    // Create windows for remaining hosts
+    for (i, host) in hosts_iter.enumerate() {
+        let host_cmd = format!("ssh -t {} {}", host, cmd_str);
+        let host_log = output_dir.join(host).join("out.log");
+        let window_index = i + 1; // First host is 0, so remaining start at 1
+
+        tmux(&socket_str, &[
+            "new-window", "-t", &session_name, "-n", host, &host_cmd
+        ])?;
+
+        tmux(&socket_str, &[
+            "pipe-pane", "-t", &format!("{}:{}", session_name, window_index),
+            &format!("cat > {}", host_log.display())
+        ])?;
     }
 
-    // Attach to the tmux session for interactive use
-    let mut ui_tmux = Command::new("tmux")
-        .args(["-S", socket_path.to_str().unwrap(), "attach", "-t", &session_name])
-        .spawn()?;
+    // Select first window
+    tmux(&socket_str, &[
+        "select-window", "-t", &format!("{}:0", session_name)
+    ])?;
 
-    ui_tmux.wait()?;
-    control.kill()?;
+    // Attach to the tmux session for interactive use
+    let status = Command::new("tmux")
+        .args(["-S", socket_str, "attach", "-t", &session_name])
+        .status()?;
+
+    if !status.success() {
+        eprintln!("tmux attach exited with: {}", status);
+    }
 
     // Cleanup unless --keep
     if !cli.keep {
@@ -117,7 +129,16 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Simple shell escaping - wrap in single quotes, escape existing single quotes
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace("'", "'\\''"))
+/// Run a tmux command with the given socket
+fn tmux(socket: &str, args: &[&str]) -> Result<()> {
+    let status = Command::new("tmux")
+        .args(["-S", socket])
+        .args(args)
+        .status()
+        .with_context(|| format!("Failed to run tmux {:?}", args))?;
+
+    if !status.success() {
+        anyhow::bail!("tmux {:?} failed: {}", args, status);
+    }
+    Ok(())
 }

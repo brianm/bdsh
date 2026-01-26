@@ -16,8 +16,8 @@ pub struct Control {
 
 #[derive(Debug)]
 pub struct Window {
-    name: String,
-    id: String,
+    pub name: String,
+    pub id: String,
 }
 
 impl Control {
@@ -77,7 +77,6 @@ impl Control {
         // to let us get the window id
         let mut parts = vec![
             "new-window".to_string(),
-            "-d".to_string(),
             "-P".to_string(),
             "-F".to_string(),
             "'@ #{window_name} #{window_id}'".to_string(),
@@ -144,6 +143,28 @@ impl Control {
         self.stdin
             .write_all(command.as_bytes())
             .map_err(TmuxError::IoError)?;
+        Ok(())
+    }
+
+    /// Send a command and wait for it to complete by consuming notifications until %end
+    pub fn send_and_wait(&mut self, command: &str) -> Result<()> {
+        self.send(command)?;
+        loop {
+            let n = self.consume_notification()?;
+            if matches!(n, Notification::End) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Send keys to a target window/pane, followed by Enter
+    pub fn send_keys(&mut self, target: &str, text: &str) -> Result<()> {
+        // Use -l for literal text (no key name lookup), then send Enter separately
+        // Escape double quotes and backslashes for tmux
+        let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+        self.send_and_wait(&format!("send-keys -t {} -l \"{}\"\n", target, escaped))?;
+        self.send_and_wait(&format!("send-keys -t {} Enter\n", target))?;
         Ok(())
     }
 }
