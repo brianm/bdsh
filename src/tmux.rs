@@ -22,11 +22,30 @@ pub struct Window {
 
 impl Control {
     pub fn start_session(name: &str, command: Option<String>) -> Result<Control> {
-        let mut args = vec!["-C", "new-session", "-s", &name];
-        let command: Option<&str> = command.as_deref();
-        args.extend(command.iter());
+        Self::start_session_with_socket(name, std::path::Path::new(""), command)
+    }
+
+    pub fn start_session_with_socket(
+        name: &str,
+        socket_path: &std::path::Path,
+        command: Option<String>,
+    ) -> Result<Control> {
+        let mut args: Vec<String> = vec![];
+
+        // Add socket path if provided
+        if socket_path.as_os_str().len() > 0 {
+            args.push("-S".into());
+            args.push(socket_path.to_string_lossy().into());
+        }
+
+        args.extend(["-C".into(), "new-session".into(), "-s".into(), name.into()]);
+
+        if let Some(ref cmd) = command {
+            args.push(cmd.clone());
+        }
+
         let mut tmux = Command::new("tmux")
-            .args(args)
+            .args(&args)
             .stdout(Stdio::piped())
             .stdin(Stdio::piped())
             .spawn()
@@ -46,8 +65,8 @@ impl Control {
         loop {
             let notif = c.consume_notification()?;
             match notif {
-                Notification::SessionChanged(_, name) if name == c.name => break,
-                _ => continue, //print!("skipping notif: {:?}\n", notif),
+                Notification::SessionChanged(_, ref session_name) if session_name == &c.name => break,
+                _ => continue,
             }
         }
         Ok(c)
@@ -57,15 +76,20 @@ impl Control {
         // use a convention where we send -P -F '@#{window_name} #{window_id}'
         // to let us get the window id
         let mut parts = vec![
-            "new-window",
-            "-d",
-            "-P",
-            "-F",
-            "'@ #{window_name} #{window_id}'",
-            "-n",
-            name,
+            "new-window".to_string(),
+            "-d".to_string(),
+            "-P".to_string(),
+            "-F".to_string(),
+            "'@ #{window_name} #{window_id}'".to_string(),
+            "-n".to_string(),
+            name.to_string(),
         ];
-        parts.extend(command.iter());
+        // Quote the command for tmux control mode
+        if let Some(cmd) = command {
+            // Escape single quotes and wrap in single quotes for tmux
+            let escaped = cmd.replace("'", "'\\''");
+            parts.push(format!("'{}'", escaped));
+        }
         let line = parts.join(" ");
 
         self.send(&format!("{}\n", line))?;
