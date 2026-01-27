@@ -104,8 +104,6 @@ fn run_command(
         }
     };
 
-    println!("Output directory: {}", output_dir.display());
-
     // Create host subdirectories
     for host in &hosts {
         fs::create_dir_all(output_dir.join(host))?;
@@ -193,12 +191,11 @@ fn run_command(
     // Cleanup unless --keep or .keep marker exists (set by 'K' in watch TUI)
     let keep_marker = output_dir.join(".keep");
     if !keep && !keep_marker.exists() {
-        println!("Cleaning up {}", output_dir.display());
         fs::remove_dir_all(&output_dir)?;
     } else {
         // Remove the marker file but keep the rest
         let _ = fs::remove_file(&keep_marker);
-        println!("Output preserved at {}", output_dir.display());
+        println!("{}", output_dir.display());
     }
 
     Ok(())
