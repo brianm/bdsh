@@ -1,3 +1,7 @@
 # cargo-release configuration for jj compatibility
 # jj keeps git in detached HEAD state, so we must allow HEAD
 allow-branch = ["HEAD", "main"]
+
+# Disable automatic push - jj's detached HEAD can't be pushed as a branch
+# After release, push tags manually: git push origin --tags
+push = false
