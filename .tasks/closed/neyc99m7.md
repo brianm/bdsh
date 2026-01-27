@@ -3,7 +3,7 @@ yatl_version: 1
 title: Implement .keep mechanism for preserving output
 id: neyc99m7
 created: 2026-01-18T21:42:06.807232Z
-updated: 2026-01-18T21:42:34.695008Z
+updated: 2026-01-27T19:27:02.931589528Z
 author: Brian McCallister
 priority: low
 tags:
@@ -34,3 +34,8 @@ Created task.
 # Log: 2026-01-18T21:42:34Z Brian McCallister
 
 Added blocker: r5tbh396
+
+---
+# Log: 2026-01-27T19:27:02Z Brian McCallister
+
+Closed: Completed: --keep flag, 'K' keybinding in TUI toggles .keep marker, cleanup checks for .keep before deleting output dir, prints path when keeping

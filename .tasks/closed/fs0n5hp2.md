@@ -3,7 +3,7 @@ yatl_version: 1
 title: Convert watch mode to full TUI
 id: fs0n5hp2
 created: 2026-01-27T02:27:31.504314Z
-updated: 2026-01-27T02:27:31.504314Z
+updated: 2026-01-27T19:26:54.938451408Z
 author: Brian McCallister
 priority: low
 tags:
@@ -27,3 +27,8 @@ Not needed for MVP - current print-and-refresh works for now.
 # Log: 2026-01-27T02:27:31Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-27T19:26:54Z Brian McCallister
+
+Closed: Completed: Full TUI with ratatui - scrollable, keyboard nav (j/k/arrows), expand/collapse diffs (Enter/Space/e/c), jump to next diff (Tab), tail mode (t)

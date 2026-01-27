@@ -47,18 +47,21 @@ pub fn resolve_hosts(source: Option<&str>, filter: Option<&str>) -> Result<Vec<S
     // Load hosts from source
     let hosts = match source {
         None => load_config()?,
-        Some(s) if s.starts_with("@\"") && s.ends_with('"') => {
-            let cmd = &s[2..s.len() - 1];
-            let output = run_shell_command(cmd)?;
-            parse_tagged_lines(&output)
-        }
         Some(s) if s.starts_with('@') => {
-            let path = Path::new(&s[1..]);
-            let content = if is_executable(path)? {
-                execute_script(path)?
+            let path_or_cmd = &s[1..];
+            let path = Path::new(path_or_cmd);
+
+            let content = if path.exists() {
+                // If path exists, read it or execute it (if executable)
+                if is_executable(path)? {
+                    execute_script(path)?
+                } else {
+                    fs::read_to_string(path)
+                        .with_context(|| format!("Failed to read: {}", path.display()))?
+                }
             } else {
-                fs::read_to_string(path)
-                    .with_context(|| format!("Failed to read: {}", path.display()))?
+                // If path doesn't exist, treat as shell command
+                run_shell_command(path_or_cmd)?
             };
             parse_tagged_lines(&content)
         }
@@ -465,14 +468,16 @@ mod tests {
     }
 
     #[test]
-    fn resolve_hosts_from_quoted_command() {
-        let hosts = resolve_hosts(Some("@\"echo 'h1 :a'; echo 'h2 :b'\""), None).unwrap();
+    fn resolve_hosts_from_shell_command() {
+        // Simulates: bdsh @'echo h1; echo h2' (shell strips quotes, bdsh gets command)
+        let hosts = resolve_hosts(Some("@echo 'h1 :a'; echo 'h2 :b'"), None).unwrap();
         assert_eq!(hosts, vec!["h1", "h2"]);
     }
 
     #[test]
-    fn resolve_hosts_from_quoted_command_with_filter() {
-        let hosts = resolve_hosts(Some("@\"echo 'h1 :a'; echo 'h2 :b'\""), Some(":a")).unwrap();
+    fn resolve_hosts_from_shell_command_with_filter() {
+        // Simulates: bdsh @'echo h1; echo h2' :a (shell strips quotes)
+        let hosts = resolve_hosts(Some("@echo 'h1 :a'; echo 'h2 :b'"), Some(":a")).unwrap();
         assert_eq!(hosts, vec!["h1"]);
     }
 

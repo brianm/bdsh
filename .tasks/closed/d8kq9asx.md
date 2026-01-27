@@ -3,7 +3,7 @@ yatl_version: 1
 title: Parse tabular host data with column selection
 id: d8kq9asx
 created: 2026-01-26T04:58:12.822491Z
-updated: 2026-01-26T04:58:19.661303Z
+updated: 2026-01-27T19:25:12.011840890Z
 author: Brian McCallister
 priority: high
 tags:
@@ -40,3 +40,8 @@ Created task.
 # Log: 2026-01-26T04:58:19Z Brian McCallister
 
 Added blocker: fg7vd2gz
+
+---
+# Log: 2026-01-27T19:25:12Z Brian McCallister
+
+Closed: Decided to only use tagged list format, not supporting JSON/YAML/tabular formats

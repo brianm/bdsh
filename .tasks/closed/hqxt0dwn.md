@@ -3,7 +3,7 @@ yatl_version: 1
 title: Parse YAML host data with json-pointer
 id: hqxt0dwn
 created: 2026-01-26T04:58:40.525416Z
-updated: 2026-01-26T04:58:46.039920Z
+updated: 2026-01-27T19:25:12.012861202Z
 author: Brian McCallister
 priority: medium
 tags:
@@ -31,3 +31,8 @@ Created task.
 # Log: 2026-01-26T04:58:46Z Brian McCallister
 
 Added blocker: 3d2ymbad
+
+---
+# Log: 2026-01-27T19:25:12Z Brian McCallister
+
+Closed: Decided to only use tagged list format, not supporting JSON/YAML/tabular formats
