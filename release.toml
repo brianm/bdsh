@@ -1,0 +1,3 @@
+# cargo-release configuration for jj compatibility
+# jj keeps git in detached HEAD state, so we must allow HEAD
+allow-branch = ["HEAD", "main"]
