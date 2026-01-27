@@ -2,6 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
+    symbols::merge::MergeStrategy,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
@@ -66,7 +67,12 @@ impl Widget for StatusBar<'_> {
             keep_indicator
         );
         let paragraph = Paragraph::new(Line::from(status_items))
-            .block(Block::default().borders(Borders::ALL).title(title))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .merge_borders(MergeStrategy::Exact),
+            )
             .wrap(Wrap { trim: true });
         paragraph.render(area, buf);
     }

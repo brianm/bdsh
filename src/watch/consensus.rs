@@ -3,6 +3,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
+    symbols::merge::MergeStrategy,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
 };
@@ -728,7 +729,11 @@ impl StatefulWidget for ConsensusViewWidget {
         // Build display lines
         let lines = state.build_display_lines(scroll_offset, inner_height);
 
-        let paragraph = Paragraph::new(lines).block(Block::default().borders(Borders::ALL));
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .merge_borders(MergeStrategy::Exact),
+        );
         paragraph.render(area, buf);
     }
 }

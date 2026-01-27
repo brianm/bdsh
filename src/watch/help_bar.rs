@@ -2,6 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style},
+    symbols::merge::MergeStrategy,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
 };
@@ -28,8 +29,12 @@ impl Widget for HelpBar {
             Span::raw(":quit"),
         ];
 
-        let paragraph = Paragraph::new(Line::from(help_text))
-            .block(Block::default().borders(Borders::ALL).title("Help"));
+        let paragraph = Paragraph::new(Line::from(help_text)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Help")
+                .merge_borders(MergeStrategy::Exact),
+        );
         paragraph.render(area, buf);
     }
 }

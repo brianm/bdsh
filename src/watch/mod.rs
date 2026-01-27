@@ -17,7 +17,7 @@ use crossterm::{
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Spacing},
     Frame, Terminal,
 };
 // Note: similar crate still available if we need diff-based view later
@@ -489,6 +489,7 @@ fn render_ui(f: &mut Frame, state: &mut WatchApp, spinner: char) {
             Constraint::Min(1),    // Main content
             Constraint::Length(3), // Help bar
         ])
+        .spacing(Spacing::Overlap(1))
         .split(f.area());
 
     let status_bar = StatusBar::new(&state.hosts, &state.statuses, spinner, state.tail_mode, state.keep_output);
