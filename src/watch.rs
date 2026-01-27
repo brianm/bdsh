@@ -21,7 +21,7 @@ use std::fs;
 use std::io::{self, stdout, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A line in the consensus view
 #[derive(Clone, Debug)]
@@ -47,6 +47,10 @@ enum ConsensusLine {
     },
 }
 
+/// Spinner frames for running status
+const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_INTERVAL_MS: u64 = 80;
+
 /// State for the watch mode TUI
 struct WatchState {
     output_dir: PathBuf,
@@ -60,6 +64,9 @@ struct WatchState {
     last_outputs: HashMap<String, String>,
     /// Whether output should be kept (creates .keep marker file)
     keep_output: bool,
+    /// Spinner animation state
+    spinner_frame: usize,
+    spinner_last_update: Instant,
 }
 
 impl WatchState {
@@ -75,7 +82,19 @@ impl WatchState {
             selected_variant: None,
             last_outputs: HashMap::new(),
             keep_output,
+            spinner_frame: 0,
+            spinner_last_update: Instant::now(),
         }
+    }
+
+    /// Get the current spinner character and advance if needed
+    fn spinner_char(&mut self) -> char {
+        let now = Instant::now();
+        if now.duration_since(self.spinner_last_update).as_millis() >= SPINNER_INTERVAL_MS as u128 {
+            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+            self.spinner_last_update = now;
+        }
+        SPINNER_FRAMES[self.spinner_frame]
     }
 
     fn refresh(&mut self) -> Result<()> {
@@ -564,8 +583,11 @@ fn run_tui(
     let _ = state.refresh(); // Initial refresh, ignore errors
 
     loop {
+        // Get spinner char (advances animation)
+        let spinner = state.spinner_char();
+
         // Draw UI
-        terminal.draw(|f| render_ui(f, &state))?;
+        terminal.draw(|f| render_ui(f, &state, spinner))?;
 
         // Handle events with short timeout
         if event::poll(Duration::from_millis(100))? {
@@ -616,7 +638,7 @@ fn run_tui(
     Ok(())
 }
 
-fn render_ui(f: &mut Frame, state: &WatchState) {
+fn render_ui(f: &mut Frame, state: &WatchState, spinner: char) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -626,27 +648,28 @@ fn render_ui(f: &mut Frame, state: &WatchState) {
         ])
         .split(f.area());
 
-    render_status_bar(f, chunks[0], state);
+    render_status_bar(f, chunks[0], state, spinner);
     render_consensus(f, chunks[1], state);
     render_help_bar(f, chunks[2]);
 }
 
-fn render_status_bar(f: &mut Frame, area: Rect, state: &WatchState) {
+fn render_status_bar(f: &mut Frame, area: Rect, state: &WatchState, spinner: char) {
+    let spinner_str = spinner.to_string();
     let status_items: Vec<Span> = state
         .hosts
         .iter()
         .flat_map(|host| {
             let status = state.statuses.get(host).map(|s| s.as_str()).unwrap_or("?");
-            let (symbol, color) = match status {
-                "running" => ("*", Color::Yellow),
-                "success" => ("ok", Color::Green),
-                "failed" => ("!!", Color::Red),
+            let (symbol, color): (&str, Color) = match status {
+                "running" => (&spinner_str, Color::Yellow),
+                "success" => ("✓", Color::Green),
+                "failed" => ("✗", Color::Red),
                 _ => ("?", Color::Gray),
             };
             vec![
                 Span::raw(host.clone()),
                 Span::raw(":"),
-                Span::styled(symbol, Style::default().fg(color)),
+                Span::styled(symbol.to_string(), Style::default().fg(color)),
                 Span::raw("  "),
             ]
         })
