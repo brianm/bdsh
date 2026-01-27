@@ -3,7 +3,7 @@ yatl_version: 1
 title: Use dedicated tmux socket for isolation
 id: vfpfzrkt
 created: 2026-01-18T21:40:26.291986Z
-updated: 2026-01-18T21:40:36.008977Z
+updated: 2026-01-27T02:08:42.797967Z
 author: Brian McCallister
 priority: medium
 tags:
@@ -24,3 +24,8 @@ Benefits:
 # Log: 2026-01-18T21:40:26Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-27T02:08:42Z Brian McCallister
+
+Closed: Implemented in spike - uses output_dir/tmux.sock

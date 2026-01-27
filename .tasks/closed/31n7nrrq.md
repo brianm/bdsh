@@ -3,7 +3,7 @@ yatl_version: 1
 title: Parse inline comma-separated hosts
 id: 31n7nrrq
 created: 2026-01-26T04:57:28.187572Z
-updated: 2026-01-26T04:57:35.021384Z
+updated: 2026-01-27T02:08:42.873942Z
 author: Brian McCallister
 priority: high
 tags:
@@ -30,3 +30,8 @@ Created task.
 # Log: 2026-01-26T04:57:35Z Brian McCallister
 
 Added blocker: 3132nkry
+
+---
+# Log: 2026-01-27T02:08:42Z Brian McCallister
+
+Closed: Implemented in spike - splits host_spec on comma

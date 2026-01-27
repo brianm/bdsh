@@ -23,23 +23,12 @@ bdsh (Better Distributed Shell) is a tool for running commands on multiple hosts
 
 ## Architecture
 
-The tool uses a two-mode tmux-based architecture:
+The tool uses a tmux-based architecture with direct command execution:
 
-**Server Mode (default)**: Creates a tmux control session (`-C new-session`) that spawns windows for each host. Commands run as `ssh $host $command | tee $output_dir/$host/out.log` to capture output while preserving interactivity.
+**Session Mode**: Creates a tmux session with one window per host. Each window runs `ssh -t $host $command` with `pipe-pane` to capture output to `$output_dir/$host/out.log` while preserving full interactivity.
 
-**Client/Watch Mode**: Monitors the output directory for file changes, generates consensus views, and highlights differences between hosts. Operates independently of tmux.
+**Watch Mode** (planned): Will monitor the output directory for file changes, generate consensus views, and highlight differences between hosts.
 
 ### Key Files
 
-- `src/main.rs` - Entry point, CLI handling, `Job` struct defining work units (root dir, host, command)
-- `src/tmux.rs` - Tmux control mode interface:
-  - `Control` struct - Manages tmux process with stdin/stdout pipes
-  - `Window` struct - Represents tmux windows
-  - `Notification` enum - Parses tmux control mode protocol (`%session-changed`, `%begin`, `%end`, `@` output)
-  - `TmuxError` - Custom error types via thiserror
-
-### Tmux Control Protocol
-
-The `Control` struct communicates with tmux via control mode, which uses line-based notifications prefixed with `%` or `@`. Key patterns:
-- Uses `-P -F` flags to extract window IDs when creating windows
-- Tracks state via file system rather than notification tracking for debuggability
+- `src/main.rs` - Entry point, CLI handling, tmux session management

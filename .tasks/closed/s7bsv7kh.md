@@ -3,16 +3,14 @@ yatl_version: 1
 title: Execute SSH commands via tmux windows
 id: s7bsv7kh
 created: 2026-01-18T21:40:56.114966Z
-updated: 2026-01-26T05:00:05.457968Z
+updated: 2026-01-27T02:09:42.633874Z
 author: Brian McCallister
 priority: high
 tags:
 - server-mode
 - tmux
 blocked_by:
-- 14ft0q0f
 - vfpfzrkt
-- g5038fhj
 ---
 
 Wire up the server mode to actually execute commands:
@@ -59,3 +57,18 @@ Removed blocker: mzmjcgt2
 # Log: 2026-01-26T05:00:05Z Brian McCallister
 
 Added blocker: g5038fhj
+
+---
+# Log: 2026-01-27T02:09:39Z Brian McCallister
+
+Removed blocker: 14ft0q0f
+
+---
+# Log: 2026-01-27T02:09:39Z Brian McCallister
+
+Removed blocker: g5038fhj
+
+---
+# Log: 2026-01-27T02:09:42Z Brian McCallister
+
+Closed: Basic SSH execution working in spike - ssh -t with pipe-pane capture
