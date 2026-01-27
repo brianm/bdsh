@@ -2,6 +2,10 @@
 name = "bdsh"
 version = "0.1.0"
 edition = "2021"
+description = "Run commands on multiple hosts simultaneously via SSH with consensus output view"
+license = "Apache-2.0"
+repository = "https://github.com/brianm/bdsh"
+homepage = "https://github.com/brianm/bdsh"
 
 [dependencies]
 anyhow = "1.0.86"
