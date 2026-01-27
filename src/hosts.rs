@@ -452,11 +452,14 @@ mod tests {
         writeln!(file, "echo 'host1 :a'").unwrap();
         writeln!(file, "echo 'host2 :b'").unwrap();
 
-        let mut perms = fs::metadata(file.path()).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(file.path(), perms).unwrap();
+        // Close the file handle to avoid "Text file busy" error when executing
+        let path = file.into_temp_path();
 
-        let spec = format!("@{}", file.path().display());
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&path, perms).unwrap();
+
+        let spec = format!("@{}", path.display());
         let hosts = resolve_hosts(Some(&spec), None).unwrap();
         assert_eq!(hosts, vec!["host1", "host2"]);
     }
