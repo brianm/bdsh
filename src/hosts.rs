@@ -25,7 +25,7 @@ pub enum TagFilter {
 /// Resolve hosts from source with optional tag filter
 ///
 /// Source formats:
-/// - `None`: Load from config file (~/.config/bdsh/config)
+/// - `None`: Load from default hosts file (~/.config/bdsh/hosts)
 /// - `@"cmd arg1 arg2"`: Run shell command, parse output
 /// - `@/path/to/file`: Read file (or execute if has x-bit)
 /// - `host1,host2,host3`: Inline comma-separated hostnames
@@ -105,7 +105,7 @@ fn run_shell_command(cmd: &str) -> Result<String> {
     String::from_utf8(output.stdout).context("Invalid UTF-8 output from command")
 }
 
-/// Get the config file path
+/// Get the default hosts file path
 fn config_path() -> Option<PathBuf> {
     let config_dir = env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -114,7 +114,7 @@ fn config_path() -> Option<PathBuf> {
             PathBuf::from(home).join(".config")
         });
 
-    let path = config_dir.join("bdsh").join("config");
+    let path = config_dir.join("bdsh").join("hosts");
     if path.exists() {
         Some(path)
     } else {
@@ -124,7 +124,7 @@ fn config_path() -> Option<PathBuf> {
 
 /// Load hosts from config file
 fn load_config() -> Result<Vec<TaggedHost>> {
-    let path = config_path().context("No config file found at ~/.config/bdsh/config")?;
+    let path = config_path().context("No hosts file found at ~/.config/bdsh/hosts")?;
 
     let contents = if is_executable(&path)? {
         execute_script(&path)?
@@ -173,11 +173,17 @@ fn parse_inline(spec: &str) -> Vec<String> {
 }
 
 /// Parse tagged lines format: `hostname [:tag1] [:tag2] ...`
+/// Lines starting with `#`, `//`, or `;` are treated as comments and ignored.
 fn parse_tagged_lines(content: &str) -> Vec<TaggedHost> {
     content
         .lines()
         .map(|line| line.trim())
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter(|line| {
+            !line.is_empty()
+                && !line.starts_with('#')
+                && !line.starts_with("//")
+                && !line.starts_with(';')
+        })
         .map(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
             let hostname = parts[0].to_string();
@@ -291,6 +297,28 @@ mod tests {
     fn parse_tagged_lines_with_comments() {
         let hosts = parse_tagged_lines("# comment\nhost1 :web\n\n# another\nhost2\n");
         assert_eq!(hosts.len(), 2);
+    }
+
+    #[test]
+    fn parse_tagged_lines_with_various_comment_styles() {
+        let hosts = parse_tagged_lines(
+            "# hash comment\nhost1 :web\n// slash comment\nhost2 :db\n; semicolon comment\nhost3 :api\n",
+        );
+        assert_eq!(hosts.len(), 3);
+        assert_eq!(hosts[0].hostname, "host1");
+        assert_eq!(hosts[1].hostname, "host2");
+        assert_eq!(hosts[2].hostname, "host3");
+    }
+
+    #[test]
+    fn parse_tagged_lines_with_whitespace_only_lines() {
+        let hosts = parse_tagged_lines(
+            "host1 :web\n   \n\t\t\nhost2 :db\n  \t  \nhost3 :api\n",
+        );
+        assert_eq!(hosts.len(), 3);
+        assert_eq!(hosts[0].hostname, "host1");
+        assert_eq!(hosts[1].hostname, "host2");
+        assert_eq!(hosts[2].hostname, "host3");
     }
 
     // === Tag filter parsing tests ===

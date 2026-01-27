@@ -15,7 +15,7 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["host_source", "tag_filter", "command"])]
     watch: Option<PathBuf>,
 
-    /// Host source: @file, @"cmd", inline (h1,h2), or omit for config
+    /// Host source: @file, @"cmd", inline (h1,h2), or omit for hosts file
     #[arg()]
     host_source: Option<String>,
 
