@@ -67,6 +67,8 @@ struct WatchState {
     /// Spinner animation state
     spinner_frame: usize,
     spinner_last_update: Instant,
+    /// Tail mode - auto-scroll to end
+    tail_mode: bool,
 }
 
 impl WatchState {
@@ -84,6 +86,36 @@ impl WatchState {
             keep_output,
             spinner_frame: 0,
             spinner_last_update: Instant::now(),
+            tail_mode: true,
+        }
+    }
+
+    fn toggle_tail(&mut self) {
+        self.tail_mode = !self.tail_mode;
+        if self.tail_mode {
+            // Jump to end when enabling tail mode
+            self.scroll_to_end();
+        }
+    }
+
+    fn scroll_to_end(&mut self) {
+        if !self.consensus.is_empty() {
+            self.selected_line = self.consensus.len() - 1;
+            // If last line is expanded Differs, select last variant
+            if let Some(ConsensusLine::Differs {
+                expanded: true,
+                variants,
+                missing,
+                ..
+            }) = self.consensus.get(self.selected_line)
+            {
+                let variant_count = variants.len() + if missing.is_empty() { 0 } else { 1 };
+                if variant_count > 0 {
+                    self.selected_variant = Some(variant_count - 1);
+                }
+            } else {
+                self.selected_variant = None;
+            }
         }
     }
 
@@ -159,6 +191,8 @@ impl WatchState {
     }
 
     fn scroll_up(&mut self) {
+        self.tail_mode = false; // Manual scroll disables tail
+
         // If we're in a variant, try to move up within variants
         if let Some(var_idx) = self.selected_variant {
             if var_idx > 0 {
@@ -191,6 +225,8 @@ impl WatchState {
     }
 
     fn scroll_down(&mut self) {
+        self.tail_mode = false; // Manual scroll disables tail
+
         // Check if current line is an expanded Differs
         if let Some(ConsensusLine::Differs {
             expanded: true,
@@ -581,6 +617,9 @@ fn run_tui(
 ) -> Result<()> {
     let mut state = WatchState::new(output_dir.to_path_buf());
     let _ = state.refresh(); // Initial refresh, ignore errors
+    if state.tail_mode {
+        state.scroll_to_end();
+    }
 
     loop {
         // Get spinner char (advances animation)
@@ -623,6 +662,7 @@ fn run_tui(
                         (KeyCode::Char('e'), KeyModifiers::NONE) => state.expand_all(),
                         (KeyCode::Char('c'), KeyModifiers::NONE) => state.collapse_all(),
                         (KeyCode::Char('K'), KeyModifiers::SHIFT) => state.toggle_keep(),
+                        (KeyCode::Char('t'), KeyModifiers::NONE) => state.toggle_tail(),
 
                         _ => {}
                     }
@@ -633,6 +673,9 @@ fn run_tui(
         // Always refresh - reading small files is fast, and this avoids
         // any delays from file watcher event propagation
         let _ = state.refresh();
+        if state.tail_mode {
+            state.scroll_to_end();
+        }
     }
 
     Ok(())
@@ -675,8 +718,14 @@ fn render_status_bar(f: &mut Frame, area: Rect, state: &WatchState, spinner: cha
         })
         .collect();
 
+    let tail_indicator = if state.tail_mode { " [TAIL]" } else { "" };
     let keep_indicator = if state.keep_output { " [KEEP]" } else { "" };
-    let title = format!("Consensus View ({} hosts){}", state.hosts.len(), keep_indicator);
+    let title = format!(
+        "Consensus View ({} hosts){}{}",
+        state.hosts.len(),
+        tail_indicator,
+        keep_indicator
+    );
     let paragraph = Paragraph::new(Line::from(status_items))
         .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: true });
@@ -942,6 +991,8 @@ fn render_help_bar(f: &mut Frame, area: Rect) {
         Span::raw(":expand/collapse  "),
         Span::styled("Tab", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(":next-diff  "),
+        Span::styled("t", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(":tail  "),
         Span::styled("e/c", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(":all  "),
         Span::styled("K", Style::default().add_modifier(Modifier::BOLD)),
