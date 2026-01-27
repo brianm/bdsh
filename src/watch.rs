@@ -15,7 +15,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
-use similar::{ChangeTag, TextDiff};
+// Note: similar crate still available if we need diff-based view later
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, stdout, Read, Write};
@@ -28,14 +28,22 @@ use std::time::Duration;
 enum ConsensusLine {
     /// All hosts have identical content
     Identical(String),
-    /// Hosts have different content
+    /// Hosts have different content - show most common, allow expansion
     Differs {
-        /// Map from content -> list of hosts with that content (ordered)
+        /// The most common content (shown by default)
+        consensus: String,
+        /// How many hosts have the consensus version
+        consensus_count: usize,
+        /// Total number of hosts
+        total_hosts: usize,
+        /// All variants: content -> list of hosts (ordered by frequency, most common first)
         variants: IndexMap<String, Vec<String>>,
         /// Hosts missing this line entirely
         missing: Vec<String>,
-        /// Currently expanded?
+        /// Currently expanded to show all variants?
         expanded: bool,
+        /// Which variant contents have their host lists expanded (for [N] groups)
+        expanded_hosts: std::collections::HashSet<String>,
     },
 }
 
@@ -46,19 +54,27 @@ struct WatchState {
     statuses: HashMap<String, String>,
     consensus: Vec<ConsensusLine>,
     selected_line: usize,
+    /// Which variant is selected within an expanded Differs (None = the main line)
+    selected_variant: Option<usize>,
     /// Cache of last-read outputs to detect changes
     last_outputs: HashMap<String, String>,
+    /// Whether output should be kept (creates .keep marker file)
+    keep_output: bool,
 }
 
 impl WatchState {
     fn new(output_dir: PathBuf) -> Self {
+        // Check if .keep marker already exists
+        let keep_output = output_dir.join(".keep").exists();
         Self {
             output_dir,
             hosts: Vec::new(),
             statuses: HashMap::new(),
             consensus: Vec::new(),
             selected_line: 0,
+            selected_variant: None,
             last_outputs: HashMap::new(),
+            keep_output,
         }
     }
 
@@ -124,12 +140,72 @@ impl WatchState {
     }
 
     fn scroll_up(&mut self) {
+        // If we're in a variant, try to move up within variants
+        if let Some(var_idx) = self.selected_variant {
+            if var_idx > 0 {
+                self.selected_variant = Some(var_idx - 1);
+                return;
+            } else {
+                // At first variant, exit to main line
+                self.selected_variant = None;
+                return;
+            }
+        }
+
+        // Move to previous consensus line
         if self.selected_line > 0 {
             self.selected_line -= 1;
+            // If previous line is expanded Differs, select its last variant
+            if let Some(ConsensusLine::Differs {
+                expanded: true,
+                variants,
+                missing,
+                ..
+            }) = self.consensus.get(self.selected_line)
+            {
+                let variant_count = variants.len() + if missing.is_empty() { 0 } else { 1 };
+                if variant_count > 0 {
+                    self.selected_variant = Some(variant_count - 1);
+                }
+            }
         }
     }
 
     fn scroll_down(&mut self) {
+        // Check if current line is an expanded Differs
+        if let Some(ConsensusLine::Differs {
+            expanded: true,
+            variants,
+            missing,
+            ..
+        }) = self.consensus.get(self.selected_line)
+        {
+            let variant_count = variants.len() + if missing.is_empty() { 0 } else { 1 };
+
+            if let Some(var_idx) = self.selected_variant {
+                if var_idx + 1 < variant_count {
+                    // Move to next variant
+                    self.selected_variant = Some(var_idx + 1);
+                    return;
+                } else {
+                    // At last variant, move to next consensus line
+                    self.selected_variant = None;
+                    if self.selected_line < self.consensus.len().saturating_sub(1) {
+                        self.selected_line += 1;
+                    }
+                    return;
+                }
+            } else {
+                // On main line of expanded Differs, enter variants
+                if variant_count > 0 {
+                    self.selected_variant = Some(0);
+                    return;
+                }
+            }
+        }
+
+        // Move to next consensus line
+        self.selected_variant = None;
         if self.selected_line < self.consensus.len().saturating_sub(1) {
             self.selected_line += 1;
         }
@@ -140,6 +216,80 @@ impl WatchState {
             self.consensus.get_mut(self.selected_line)
         {
             *expanded = !*expanded;
+        }
+    }
+
+    /// Expand the selected line/variant (right-arrow behavior)
+    /// - If on collapsed Differs main line: expand to show variants
+    /// - If on a variant with [N] hosts: expand that variant's host list
+    fn expand_selected(&mut self) {
+        if let Some(ConsensusLine::Differs {
+            expanded,
+            variants,
+            missing,
+            expanded_hosts,
+            ..
+        }) = self.consensus.get_mut(self.selected_line)
+        {
+            if !*expanded {
+                // Expand to show variants
+                *expanded = true;
+            } else if let Some(var_idx) = self.selected_variant {
+                // Expand the selected variant's host list
+                let variant_count = variants.len();
+                if var_idx < variant_count {
+                    // It's a regular variant
+                    if let Some((content, hosts)) = variants.get_index(var_idx) {
+                        if hosts.len() > 1 {
+                            expanded_hosts.insert(content.clone());
+                        }
+                    }
+                } else if var_idx == variant_count && !missing.is_empty() {
+                    // It's the missing line
+                    if missing.len() > 1 {
+                        expanded_hosts.insert("<missing>".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Collapse the selected line/variant (left-arrow behavior)
+    /// - If on a variant with expanded hosts: collapse that variant
+    /// - If on main line with expanded variants: collapse all
+    fn collapse_selected(&mut self) {
+        if let Some(ConsensusLine::Differs {
+            expanded,
+            variants,
+            expanded_hosts,
+            ..
+        }) = self.consensus.get_mut(self.selected_line)
+        {
+            if let Some(var_idx) = self.selected_variant {
+                // Try to collapse this variant's host list
+                let variant_count = variants.len();
+                let key = if var_idx < variant_count {
+                    variants.get_index(var_idx).map(|(k, _)| k.clone())
+                } else {
+                    Some("<missing>".to_string())
+                };
+
+                if let Some(k) = key {
+                    if expanded_hosts.remove(&k) {
+                        return; // Collapsed a host list
+                    }
+                }
+                // No host list to collapse, move selection up
+                if var_idx > 0 {
+                    self.selected_variant = Some(var_idx - 1);
+                } else {
+                    self.selected_variant = None;
+                }
+            } else if *expanded {
+                // Collapse the variants
+                *expanded = false;
+                expanded_hosts.clear();
+            }
         }
     }
 
@@ -156,6 +306,18 @@ impl WatchState {
             if let ConsensusLine::Differs { expanded, .. } = line {
                 *expanded = false;
             }
+        }
+    }
+
+    fn toggle_keep(&mut self) {
+        self.keep_output = !self.keep_output;
+        let keep_marker = self.output_dir.join(".keep");
+        if self.keep_output {
+            // Create marker file
+            let _ = fs::write(&keep_marker, "");
+        } else {
+            // Remove marker file
+            let _ = fs::remove_file(&keep_marker);
         }
     }
 
@@ -316,14 +478,66 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
             ConsensusLine::Identical(content) => {
                 println!("{}", content);
             }
-            ConsensusLine::Differs { variants, missing, .. } => {
-                let variant_count = variants.len() + if missing.is_empty() { 0 } else { 1 };
-                println!("\x1b[36m[{} variants]\x1b[0m", variant_count);
+            ConsensusLine::Differs {
+                consensus,
+                consensus_count,
+                total_hosts,
+                variants,
+                missing,
+                ..
+            } => {
+                let diff_count = total_hosts - consensus_count;
+                // Show consensus with diff indicator
+                println!("\x1b[33m[{}]\x1b[0m {}", diff_count, consensus);
+
+                // Calculate max gutter width for alignment
+                let max_gutter_width = variants
+                    .iter()
+                    .map(|(_, hosts)| {
+                        if hosts.len() == 1 {
+                            hosts[0].len()
+                        } else {
+                            format!("[{}]", hosts.len()).len()
+                        }
+                    })
+                    .chain(if missing.is_empty() {
+                        None
+                    } else if missing.len() == 1 {
+                        Some(missing[0].len())
+                    } else {
+                        Some(format!("[{}]", missing.len()).len())
+                    })
+                    .max()
+                    .unwrap_or(4)
+                    .max(4);
+
+                // Show variants with host gutter on left
                 for (content, hosts) in variants.iter() {
-                    println!("  | {} ({})", content, hosts.join(", "));
+                    let host_count = hosts.len();
+                    let gutter = if host_count == 1 {
+                        hosts[0].clone()
+                    } else {
+                        format!("[{}]", host_count)
+                    };
+                    println!(
+                        "  \x1b[36m{:>width$}\x1b[0m │ {}",
+                        gutter,
+                        content,
+                        width = max_gutter_width
+                    );
                 }
                 if !missing.is_empty() {
-                    println!("  | <missing> ({})", missing.join(", "));
+                    let host_count = missing.len();
+                    let gutter = if host_count == 1 {
+                        missing[0].clone()
+                    } else {
+                        format!("[{}]", host_count)
+                    };
+                    println!(
+                        "  \x1b[36m{:>width$}\x1b[0m │ \x1b[90m<missing>\x1b[0m",
+                        gutter,
+                        width = max_gutter_width
+                    );
                 }
             }
         }
@@ -373,11 +587,20 @@ fn run_tui(
                             state.scroll_down()
                         }
 
+                        // Expand/collapse with arrow keys (hierarchical)
+                        (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
+                            state.expand_selected()
+                        }
+                        (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
+                            state.collapse_selected()
+                        }
+
                         // Actions
                         (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => state.toggle_expand(),
                         (KeyCode::Tab, _) => state.jump_to_next_diff(),
                         (KeyCode::Char('e'), KeyModifiers::NONE) => state.expand_all(),
                         (KeyCode::Char('c'), KeyModifiers::NONE) => state.collapse_all(),
+                        (KeyCode::Char('K'), KeyModifiers::SHIFT) => state.toggle_keep(),
 
                         _ => {}
                     }
@@ -429,7 +652,8 @@ fn render_status_bar(f: &mut Frame, area: Rect, state: &WatchState) {
         })
         .collect();
 
-    let title = format!("Consensus View ({} hosts)", state.hosts.len());
+    let keep_indicator = if state.keep_output { " [KEEP]" } else { "" };
+    let title = format!("Consensus View ({} hosts){}", state.hosts.len(), keep_indicator);
     let paragraph = Paragraph::new(Line::from(status_items))
         .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: true });
@@ -442,10 +666,14 @@ fn render_consensus(f: &mut Frame, area: Rect, state: &WatchState) {
     // Calculate scroll offset to keep selected line visible
     let mut scroll_offset: usize = 0;
 
-    // Calculate display row of selected line
+    // Calculate display row of selected line/variant
     let mut selected_display_row = 0;
     for (i, line) in state.consensus.iter().enumerate() {
         if i == state.selected_line {
+            // Add offset for selected variant within this line
+            if let Some(var_idx) = state.selected_variant {
+                selected_display_row += 1 + var_idx; // +1 for main line
+            }
             break;
         }
         selected_display_row += match line {
@@ -454,6 +682,7 @@ fn render_consensus(f: &mut Frame, area: Rect, state: &WatchState) {
                 variants,
                 missing,
                 expanded,
+                ..
             } => {
                 if *expanded {
                     1 + variants.len() + if missing.is_empty() { 0 } else { 1 }
@@ -491,61 +720,173 @@ fn render_consensus(f: &mut Frame, area: Rect, state: &WatchState) {
                 current_row += 1;
             }
             ConsensusLine::Differs {
+                consensus,
+                consensus_count,
+                total_hosts,
                 variants,
                 missing,
                 expanded,
+                expanded_hosts,
             } => {
-                // Header line
-                if current_row >= scroll_offset && current_row < scroll_offset + inner_height {
-                    let marker = if *expanded { "v" } else { ">" };
-                    let variant_count = variants.len() + if missing.is_empty() { 0 } else { 1 };
-                    let preview = variants
-                        .keys()
-                        .next()
-                        .map(|s| truncate(s, 30))
-                        .unwrap_or_default();
+                // Is the main line selected (not a variant)?
+                let main_line_selected = is_selected && state.selected_variant.is_none();
 
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .bg(Color::DarkGray)
-                            .add_modifier(Modifier::BOLD)
+                // Main line: show consensus content with diff indicator
+                if current_row >= scroll_offset && current_row < scroll_offset + inner_height {
+                    let diff_count = total_hosts - consensus_count;
+                    let marker = if *expanded { "v" } else { ">" };
+
+                    // Build the line with marker and content
+                    let marker_style = if main_line_selected {
+                        Style::default().fg(Color::Yellow).bg(Color::DarkGray)
                     } else {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(Color::Yellow)
                     };
 
-                    let line_content =
-                        format!("{} [{} variants] {}...", marker, variant_count, preview);
-                    lines.push(Line::from(Span::styled(line_content, style)));
+                    let content_style = if main_line_selected {
+                        Style::default().bg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    };
+
+                    let diff_indicator = format!("[{}{}] ", marker, diff_count);
+                    lines.push(Line::from(vec![
+                        Span::styled(diff_indicator, marker_style),
+                        Span::styled(consensus.clone(), content_style),
+                    ]));
                 }
                 current_row += 1;
 
                 // Expanded variant details
                 if *expanded {
-                    for (content, hosts) in variants.iter() {
+                    let variant_count = variants.len();
+
+                    // Calculate max gutter width for alignment
+                    let max_gutter_width = variants
+                        .iter()
+                        .map(|(content, hosts)| {
+                            let host_count = hosts.len();
+                            if host_count == 1 {
+                                hosts[0].len()
+                            } else if expanded_hosts.contains(content) {
+                                hosts.join(",").len()
+                            } else {
+                                format!("[{}]", host_count).len()
+                            }
+                        })
+                        .chain(if missing.is_empty() {
+                            None
+                        } else {
+                            let host_count = missing.len();
+                            Some(if host_count == 1 {
+                                missing[0].len()
+                            } else if expanded_hosts.contains("<missing>") {
+                                missing.join(",").len()
+                            } else {
+                                format!("[{}]", host_count).len()
+                            })
+                        })
+                        .max()
+                        .unwrap_or(4)
+                        .max(4); // Minimum width of 4
+
+                    for (idx, (content, hosts)) in variants.iter().enumerate() {
+                        let variant_selected =
+                            is_selected && state.selected_variant == Some(idx);
+
                         if current_row >= scroll_offset && current_row < scroll_offset + inner_height
                         {
-                            let host_list = hosts.join(", ");
-                            let detail = format!("  | {} ({})", truncate(content, 50), host_list);
-                            lines.push(Line::from(Span::styled(
-                                detail,
-                                Style::default().fg(Color::Gray),
-                            )));
+                            let host_count = hosts.len();
+                            let is_hosts_expanded = expanded_hosts.contains(content);
+
+                            // Format the gutter based on host count and expansion state
+                            let gutter = if host_count == 1 {
+                                // Single host - show name
+                                hosts[0].clone()
+                            } else if is_hosts_expanded {
+                                // Multiple hosts, expanded - show full list
+                                hosts.join(",")
+                            } else {
+                                // Multiple hosts, collapsed - show [N]
+                                format!("[{}]", host_count)
+                            };
+
+                            let gutter_style = if variant_selected {
+                                Style::default().fg(Color::Cyan).bg(Color::DarkGray)
+                            } else {
+                                Style::default().fg(Color::Cyan)
+                            };
+
+                            let content_style = if variant_selected {
+                                Style::default().fg(Color::Gray).bg(Color::DarkGray)
+                            } else {
+                                Style::default().fg(Color::Gray)
+                            };
+
+                            lines.push(Line::from(vec![
+                                Span::styled(
+                                    format!("  {:>width$} ", gutter, width = max_gutter_width),
+                                    gutter_style,
+                                ),
+                                Span::styled(
+                                    "│ ",
+                                    if variant_selected {
+                                        Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+                                    } else {
+                                        Style::default().fg(Color::DarkGray)
+                                    },
+                                ),
+                                Span::styled(truncate(content, 60), content_style),
+                            ]));
                         }
                         current_row += 1;
                     }
 
                     if !missing.is_empty() {
+                        let missing_idx = variant_count;
+                        let variant_selected =
+                            is_selected && state.selected_variant == Some(missing_idx);
+
                         if current_row >= scroll_offset && current_row < scroll_offset + inner_height
                         {
-                            let host_list = missing.join(", ");
-                            let detail = format!("  | <missing> ({})", host_list);
-                            lines.push(Line::from(Span::styled(
-                                detail,
-                                Style::default().fg(Color::DarkGray),
-                            )));
+                            let host_count = missing.len();
+                            let is_hosts_expanded = expanded_hosts.contains("<missing>");
+
+                            let gutter = if host_count == 1 {
+                                missing[0].clone()
+                            } else if is_hosts_expanded {
+                                missing.join(",")
+                            } else {
+                                format!("[{}]", host_count)
+                            };
+
+                            let gutter_style = if variant_selected {
+                                Style::default().fg(Color::Cyan).bg(Color::DarkGray)
+                            } else {
+                                Style::default().fg(Color::Cyan)
+                            };
+
+                            let content_style = if variant_selected {
+                                Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+                            } else {
+                                Style::default().fg(Color::DarkGray)
+                            };
+
+                            lines.push(Line::from(vec![
+                                Span::styled(
+                                    format!("  {:>width$} ", gutter, width = max_gutter_width),
+                                    gutter_style,
+                                ),
+                                Span::styled(
+                                    "│ ",
+                                    if variant_selected {
+                                        Style::default().bg(Color::DarkGray)
+                                    } else {
+                                        Style::default().fg(Color::DarkGray)
+                                    },
+                                ),
+                                Span::styled("<missing>", content_style),
+                            ]));
                         }
                         current_row += 1;
                     }
@@ -572,16 +913,16 @@ fn render_consensus(f: &mut Frame, area: Rect, state: &WatchState) {
 
 fn render_help_bar(f: &mut Frame, area: Rect) {
     let help_text = vec![
-        Span::styled("j/k", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled("↑↓", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(":scroll  "),
-        Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(":expand  "),
+        Span::styled("→←", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(":expand/collapse  "),
         Span::styled("Tab", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(":next-diff  "),
-        Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(":expand-all  "),
-        Span::styled("c", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(":collapse-all  "),
+        Span::styled("e/c", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(":all  "),
+        Span::styled("K", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(":keep  "),
         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(":quit"),
     ];
@@ -629,7 +970,75 @@ fn discover_hosts(output_dir: &Path) -> Result<Vec<String>> {
 /// Read output log for a host
 fn read_output(output_dir: &Path, host: &str) -> String {
     let log_path = output_dir.join(host).join("out.log");
-    fs::read_to_string(&log_path).unwrap_or_default()
+    let raw = fs::read_to_string(&log_path).unwrap_or_default();
+    // Process carriage returns and clean up control characters
+    clean_terminal_output(&raw)
+}
+
+/// Clean terminal output by processing carriage returns and stripping control chars
+fn clean_terminal_output(raw: &str) -> String {
+    raw.lines()
+        .map(|line| {
+            // Process carriage returns: text after \r overwrites from start of line
+            let processed = if line.contains('\r') {
+                let mut result = String::new();
+                for segment in line.split('\r') {
+                    if segment.is_empty() {
+                        continue;
+                    }
+                    // Overwrite from the beginning, but keep any extra length
+                    let segment_chars: Vec<char> = segment.chars().collect();
+                    let result_chars: Vec<char> = result.chars().collect();
+
+                    if segment_chars.len() >= result_chars.len() {
+                        result = segment.to_string();
+                    } else {
+                        // Overwrite beginning, keep rest
+                        let mut new_result: Vec<char> = result_chars;
+                        for (i, c) in segment_chars.into_iter().enumerate() {
+                            new_result[i] = c;
+                        }
+                        result = new_result.into_iter().collect();
+                    }
+                }
+                result
+            } else {
+                line.to_string()
+            };
+
+            // Strip ANSI escape sequences and other control characters
+            strip_ansi_and_control(&processed)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Strip ANSI escape sequences and control characters from a string
+fn strip_ansi_and_control(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // ANSI escape sequence - skip until end
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Skip until we hit a letter (end of sequence)
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else if c.is_control() && c != '\t' {
+            // Skip control characters except tab
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 /// Read status for a host (running, success, failed, or pending)
@@ -640,161 +1049,77 @@ fn read_status(output_dir: &Path, host: &str) -> String {
         .unwrap_or_else(|_| "pending".to_string())
 }
 
-/// Compute consensus view from all host outputs
+/// Compute consensus view from all host outputs using simple line-by-line comparison
 fn compute_consensus(hosts: &[String], outputs: &HashMap<&str, String>) -> Vec<ConsensusLine> {
     if hosts.is_empty() {
         return Vec::new();
     }
 
-    if hosts.len() == 1 {
-        // Single host - all lines are identical
-        let host = &hosts[0];
-        let output = &outputs[host.as_str()];
-        return output
-            .lines()
-            .map(|line| ConsensusLine::Identical(line.to_string()))
-            .collect();
-    }
+    let total_hosts = hosts.len();
 
-    // Use first host as baseline
-    let baseline_host = &hosts[0];
-    let baseline = &outputs[baseline_host.as_str()];
-    let baseline_lines: Vec<&str> = baseline.lines().collect();
-
-    // Track unified view: baseline line index -> UnifiedEntry
-    // We'll build a more sophisticated structure to handle insertions
-    #[derive(Clone, Debug)]
-    enum UnifiedEntry {
-        Baseline {
-            variants: IndexMap<String, Vec<String>>,
-            missing: Vec<String>,
-        },
-        Inserted {
-            variants: IndexMap<String, Vec<String>>,
-        },
-    }
-
-    // Initialize with baseline lines
-    let mut unified: Vec<UnifiedEntry> = baseline_lines
+    // Parse all outputs into lines
+    let host_lines: Vec<(&String, Vec<&str>)> = hosts
         .iter()
-        .map(|&line| {
-            let mut variants = IndexMap::new();
-            variants.insert(line.to_string(), vec![baseline_host.clone()]);
-            UnifiedEntry::Baseline {
-                variants,
-                missing: Vec::new(),
-            }
-        })
+        .map(|h| (h, outputs[h.as_str()].lines().collect::<Vec<_>>()))
         .collect();
 
-    // Process each other host
-    for host in hosts.iter().skip(1) {
-        let host_output = &outputs[host.as_str()];
-        let diff = TextDiff::from_lines(baseline, host_output);
+    // Find the maximum number of lines
+    let max_lines = host_lines.iter().map(|(_, lines)| lines.len()).max().unwrap_or(0);
 
-        let mut baseline_idx = 0;
-        let mut insertions: Vec<(usize, String, String)> = Vec::new(); // (position, content, host)
+    // For each line position, collect what each host has
+    (0..max_lines)
+        .map(|line_idx| {
+            let mut variants: IndexMap<String, Vec<String>> = IndexMap::new();
+            let mut missing: Vec<String> = Vec::new();
 
-        for change in diff.iter_all_changes() {
-            match change.tag() {
-                ChangeTag::Equal => {
-                    // Host has same line as baseline at this position
-                    if baseline_idx < unified.len() {
-                        if let UnifiedEntry::Baseline { variants, .. } = &mut unified[baseline_idx] {
-                            let content = change.value().trim_end().to_string();
-                            variants
-                                .entry(content)
-                                .or_insert_with(Vec::new)
-                                .push(host.clone());
-                        }
-                    }
-                    baseline_idx += 1;
-                }
-                ChangeTag::Delete => {
-                    // Baseline line missing in this host
-                    if baseline_idx < unified.len() {
-                        if let UnifiedEntry::Baseline { missing, .. } = &mut unified[baseline_idx] {
-                            missing.push(host.clone());
-                        }
-                    }
-                    baseline_idx += 1;
-                }
-                ChangeTag::Insert => {
-                    // Host has extra line
-                    let content = change.value().trim_end().to_string();
-                    insertions.push((baseline_idx, content, host.clone()));
-                }
-            }
-        }
-
-        // Process insertions (in reverse to maintain indices)
-        for (pos, content, host) in insertions.into_iter().rev() {
-            // Clamp position to valid range - positions are relative to baseline
-            // but unified may have grown from previous hosts' insertions
-            let pos = pos.min(unified.len());
-
-            // Check if there's already an Inserted at this position we can merge into
-            let mut merged = false;
-            if pos < unified.len() {
-                if let UnifiedEntry::Inserted { variants } = &mut unified[pos] {
+            for (host, lines) in &host_lines {
+                if let Some(&content) = lines.get(line_idx) {
                     variants
-                        .entry(content.clone())
+                        .entry(content.to_string())
                         .or_insert_with(Vec::new)
-                        .push(host.clone());
-                    merged = true;
+                        .push((*host).clone());
+                } else {
+                    missing.push((*host).clone());
                 }
             }
-            if !merged {
-                let mut variants = IndexMap::new();
-                variants.insert(content, vec![host]);
-                unified.insert(pos, UnifiedEntry::Inserted { variants });
-            }
-        }
-    }
 
-    // Convert to display model
-    unified
-        .into_iter()
-        .map(|entry| match entry {
-            UnifiedEntry::Baseline { variants, missing } => {
-                if variants.len() == 1 && missing.is_empty() {
-                    ConsensusLine::Identical(variants.into_keys().next().unwrap())
-                } else {
-                    ConsensusLine::Differs {
-                        variants: variants.into_iter().collect(),
-                        missing,
-                        expanded: false,
-                    }
-                }
-            }
-            UnifiedEntry::Inserted { variants } => {
-                if variants.len() == 1 {
-                    // Check if all hosts have this insertion (meaning it's actually identical)
-                    let (content, hosts_with) = variants.into_iter().next().unwrap();
-                    if hosts_with.len() == hosts.len() - 1 {
-                        // All non-baseline hosts have this - it's actually a deletion from baseline
-                        ConsensusLine::Differs {
-                            variants: IndexMap::from([(content, hosts_with)]),
-                            missing: vec![hosts[0].clone()], // baseline is "missing" this
-                            expanded: false,
-                        }
-                    } else {
-                        ConsensusLine::Differs {
-                            variants: IndexMap::from([(content, hosts_with)]),
-                            missing: Vec::new(),
-                            expanded: false,
-                        }
-                    }
-                } else {
-                    ConsensusLine::Differs {
-                        variants: variants.into_iter().collect(),
-                        missing: Vec::new(),
-                        expanded: false,
-                    }
-                }
+            // If all hosts have the same content, it's identical
+            if variants.len() == 1 && missing.is_empty() {
+                ConsensusLine::Identical(variants.into_keys().next().unwrap())
+            } else {
+                make_differs(variants, missing, total_hosts)
             }
         })
         .collect()
+}
+
+/// Create a ConsensusLine::Differs with the most common variant as consensus
+fn make_differs(
+    variants: IndexMap<String, Vec<String>>,
+    missing: Vec<String>,
+    total_hosts: usize,
+) -> ConsensusLine {
+    // Find the most common variant (most hosts)
+    let (consensus, consensus_hosts) = variants
+        .iter()
+        .max_by_key(|(_, hosts)| hosts.len())
+        .map(|(content, hosts)| (content.clone(), hosts.len()))
+        .unwrap_or_else(|| (String::new(), 0));
+
+    // Sort variants by frequency (most common first)
+    let mut sorted_variants: Vec<_> = variants.into_iter().collect();
+    sorted_variants.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    let variants: IndexMap<String, Vec<String>> = sorted_variants.into_iter().collect();
+
+    ConsensusLine::Differs {
+        consensus,
+        consensus_count: consensus_hosts,
+        total_hosts,
+        variants,
+        missing,
+        expanded: false,
+        expanded_hosts: std::collections::HashSet::new(),
+    }
 }
 
 #[cfg(test)]
@@ -836,15 +1161,14 @@ mod tests {
 
         let consensus = compute_consensus(&hosts, &outputs);
 
-        // The diff algorithm treats replacement as delete + insert, so we get 4 lines:
-        // line1 (identical), line2 (host1+host3, missing host2), DIFFERENT (host2 only), line3 (identical)
-        assert_eq!(consensus.len(), 4);
+        // Simple line-by-line comparison: 3 lines
+        // line1 (identical), line2 vs DIFFERENT (differs), line3 (identical)
+        assert_eq!(consensus.len(), 3);
         assert!(matches!(&consensus[0], ConsensusLine::Identical(s) if s == "line1"));
-        // line2 is present in host1+host3, missing in host2
-        assert!(matches!(&consensus[1], ConsensusLine::Differs { missing, .. } if missing.contains(&"host2".to_string())));
-        // DIFFERENT is inserted by host2
-        assert!(matches!(&consensus[2], ConsensusLine::Differs { variants, .. } if variants.contains_key("DIFFERENT")));
-        assert!(matches!(&consensus[3], ConsensusLine::Identical(s) if s == "line3"));
+        // line2 has "line2" (host1, host3) and "DIFFERENT" (host2)
+        assert!(matches!(&consensus[1], ConsensusLine::Differs { variants, consensus, .. }
+            if variants.contains_key("line2") && variants.contains_key("DIFFERENT") && consensus == "line2"));
+        assert!(matches!(&consensus[2], ConsensusLine::Identical(s) if s == "line3"));
     }
 
     #[test]

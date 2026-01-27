@@ -50,8 +50,9 @@ fn watch_shows_differences() {
         .arg(output_dir)
         .timeout(std::time::Duration::from_secs(1));
 
+    // New format shows consensus line with [N] marker for N differing hosts
     cmd.assert()
-        .stdout(predicate::str::contains("variants"))
+        .stdout(predicate::str::contains("[1]"))  // diff marker
         .stdout(predicate::str::contains("host1"))
         .stdout(predicate::str::contains("host2"));
 }
