@@ -19,25 +19,16 @@ impl TestSshd {
     /// Start a new sshd instance for testing.
     /// Returns None if sshd is not available or fails to start.
     pub fn start() -> Option<Self> {
-        // Check if sshd exists
-        if Command::new("which")
-            .arg("sshd")
-            .output()
-            .map(|o| !o.status.success())
-            .unwrap_or(true)
-        {
+        // Check if sshd is available by trying to run it with -?
+        // This avoids depending on 'which' command which may not exist on all systems
+        let sshd_check = Command::new("sshd")
+            .arg("-?")
+            .output();
+
+        if sshd_check.is_err() {
             eprintln!("sshd not found, skipping SSH tests");
             return None;
         }
-
-        // Find sshd path (macOS: /usr/sbin/sshd, Linux: /usr/sbin/sshd)
-        let sshd_path = Command::new("which")
-            .arg("sshd")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/usr/sbin/sshd".to_string());
 
         // Find a free port
         let port = find_free_port()?;
@@ -113,7 +104,8 @@ LogLevel DEBUG
         fs::write(&config_path, config).ok()?;
 
         // Start sshd in debug mode (foreground, verbose)
-        let mut process = Command::new(&sshd_path)
+        // Use "sshd" directly - the OS will find it in PATH
+        let mut process = Command::new("sshd")
             .args([
                 "-D",  // Don't daemonize
                 "-e",  // Log to stderr

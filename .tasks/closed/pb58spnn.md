@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Test: TestSshd uses ''which'' command that may not exist'
 id: pb58spnn
 created: 2026-01-28T04:41:39.061548Z
-updated: 2026-01-28T04:41:39.061548Z
+updated: 2026-01-28T04:56:50.391Z
 author: Brian McCallister
 priority: low
 tags:
@@ -40,3 +40,8 @@ This is a test-only issue but could cause confusion when tests skip unexpectedly
 # Log: 2026-01-28T04:41:39Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:56:50Z Brian McCallister
+
+Closed: Replaced 'which sshd' with direct 'sshd -?' invocation - OS searches PATH automatically
