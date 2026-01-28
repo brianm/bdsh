@@ -81,11 +81,33 @@ The consensus view shows output that's identical across hosts normally, and high
 --no-watch         Skip watch window, just run commands
 ```
 
-## Building
+## Development
+
+### Building
 
 ```bash
-cargo build --release
+cargo build           # Debug build
+cargo build --release # Release build
+cargo test            # Run tests
 ```
+
+### Making a Release
+
+Releases are automated via [cargo-dist](https://github.com/axodotdev/cargo-dist). When a version tag is pushed, GitHub Actions builds binaries for macOS and Linux, creates a GitHub release, and updates the Homebrew formula.
+
+```bash
+# Bump version, publish to crates.io, create tag
+cargo release patch --execute --no-confirm  # or minor/major
+
+# Push tag to trigger release workflow
+git push origin --tags
+```
+
+This will:
+1. Publish to [crates.io](https://crates.io/crates/bdsh)
+2. Build binaries for macOS (arm64, x86_64) and Linux (arm64, x86_64)
+3. Create a GitHub release with downloadable archives
+4. Update the Homebrew formula at `brianm/homebrew-tools`
 
 ## Alternatives
 
