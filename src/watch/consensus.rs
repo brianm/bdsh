@@ -559,12 +559,15 @@ impl ConsensusView {
     }
 }
 
-/// Truncate a string to a maximum length
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+/// Truncate a string to a maximum number of characters (not bytes).
+/// Handles multi-byte UTF-8 characters safely.
+fn truncate(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -735,5 +738,35 @@ impl StatefulWidget for ConsensusViewWidget {
                 .merge_borders(MergeStrategy::Exact),
         );
         paragraph.render(area, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_ascii() {
+        assert_eq!(truncate("hello", 10), "hello");
+        assert_eq!(truncate("hello world", 10), "hello w...");
+        assert_eq!(truncate("hi", 2), "hi");
+    }
+
+    #[test]
+    fn test_truncate_unicode() {
+        // Emoji are multi-byte but should count as single characters
+        assert_eq!(truncate("🎉🎊🎁", 10), "🎉🎊🎁");
+        assert_eq!(truncate("🎉🎊🎁🎄🎅🎆🎇", 5), "🎉🎊...");
+
+        // Mixed ASCII and unicode
+        assert_eq!(truncate("hello 🌍", 10), "hello 🌍");
+        assert_eq!(truncate("hello 🌍 world", 10), "hello 🌍...");
+    }
+
+    #[test]
+    fn test_truncate_edge_cases() {
+        assert_eq!(truncate("", 5), "");
+        assert_eq!(truncate("abc", 3), "abc");
+        assert_eq!(truncate("abcd", 3), "...");
     }
 }

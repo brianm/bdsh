@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Bug: truncate() can panic on multi-byte UTF-8'
 id: 6zy4rz6p
 created: 2026-01-28T04:40:25.377526Z
-updated: 2026-01-28T04:40:25.377526Z
+updated: 2026-01-28T04:45:07.729360Z
 author: Brian McCallister
 priority: high
 tags:
@@ -44,3 +44,8 @@ fn truncate(s: &str, max_chars: usize) -> String {
 # Log: 2026-01-28T04:40:25Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:45:07Z Brian McCallister
+
+Closed: Fixed truncate() to use chars() instead of byte slicing, added tests
