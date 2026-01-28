@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Bug: unwrap() calls can panic on edge cases'
 id: 8nahqhg1
 created: 2026-01-28T04:40:25.448731Z
-updated: 2026-01-28T04:40:25.448731Z
+updated: 2026-01-28T04:45:27.446968Z
 author: Brian McCallister
 priority: medium
 tags:
@@ -28,3 +28,8 @@ These are low-probability failures but violate the pattern of using `anyhow::Res
 # Log: 2026-01-28T04:40:25Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:45:27Z Brian McCallister
+
+Closed: Replaced unwrap() with context() for proper error handling

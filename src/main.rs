@@ -113,11 +113,15 @@ fn run_command(
     let cmd_str = command.join(" ");
 
     // Generate a session name
-    let session_name = names::Generator::default().next().unwrap();
+    let session_name = names::Generator::default()
+        .next()
+        .context("Failed to generate session name")?;
 
     // Socket path for isolation
     let socket_path = output_dir.join("tmux.sock");
-    let socket_str = socket_path.to_str().unwrap();
+    let socket_str = socket_path
+        .to_str()
+        .context("Output directory path contains invalid UTF-8")?;
 
     // Get path to this executable for watch window
     let exe_path = std::env::current_exe()?;
