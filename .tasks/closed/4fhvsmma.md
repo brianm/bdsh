@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Bug: set -e prevents exit code capture in command script'
 id: 4fhvsmma
 created: 2026-01-28T04:40:22.267222Z
-updated: 2026-01-28T04:40:22.267222Z
+updated: 2026-01-28T04:44:07.701584Z
 author: Brian McCallister
 priority: high
 tags:
@@ -34,3 +34,8 @@ The current behavior means that when ssh fails, the status file never gets updat
 # Log: 2026-01-28T04:40:22Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:44:07Z Brian McCallister
+
+Closed: Removed set -e from command script to allow exit code capture

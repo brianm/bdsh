@@ -227,7 +227,7 @@ fn generate_command_script(host_dir: &Path, host: &str, command: &str) -> Result
     let script = format!(
         r#"#!/bin/sh
 # bdsh command wrapper for {host}
-set -e
+# Note: No set -e here - we need to capture the exit code from ssh
 
 STATUS_FILE="{status_path}"
 META_FILE="{meta_path}"
