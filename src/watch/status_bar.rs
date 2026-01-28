@@ -1,3 +1,4 @@
+use crate::Status;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 /// StatusBar widget - displays host status summary with colored indicators
 pub(crate) struct StatusBar<'a> {
     pub(crate) hosts: &'a [String],
-    pub(crate) statuses: &'a HashMap<String, String>,
+    pub(crate) statuses: &'a HashMap<String, Status>,
     pub(crate) spinner: char,
     pub(crate) tail_mode: bool,
     pub(crate) keep_output: bool,
@@ -20,7 +21,7 @@ pub(crate) struct StatusBar<'a> {
 impl<'a> StatusBar<'a> {
     pub(crate) fn new(
         hosts: &'a [String],
-        statuses: &'a HashMap<String, String>,
+        statuses: &'a HashMap<String, Status>,
         spinner: char,
         tail_mode: bool,
         keep_output: bool,
@@ -42,12 +43,12 @@ impl Widget for StatusBar<'_> {
             .hosts
             .iter()
             .flat_map(|host| {
-                let status = self.statuses.get(host).map(|s| s.as_str()).unwrap_or("?");
+                let status = self.statuses.get(host).copied().unwrap_or(Status::Pending);
                 let (symbol, color): (&str, Color) = match status {
-                    "running" => (&spinner_str, Color::Yellow),
-                    "success" => ("✓", Color::Green),
-                    "failed" => ("✗", Color::Red),
-                    _ => ("?", Color::Gray),
+                    Status::Running => (&spinner_str, Color::Yellow),
+                    Status::Success => ("✓", Color::Green),
+                    Status::Failed => ("✗", Color::Red),
+                    Status::Pending => ("?", Color::Gray),
                 };
                 vec![
                     Span::raw(host.clone()),

@@ -2,6 +2,7 @@ mod consensus;
 mod help_bar;
 mod status_bar;
 
+use crate::Status;
 use anyhow::Result;
 use consensus::{
     clean_terminal_output, compute_consensus, ConsensusLine, ConsensusView, ConsensusViewWidget,
@@ -44,7 +45,7 @@ struct WatchApp {
     consensus_view: ConsensusView,
 
     hosts: Vec<String>,
-    statuses: HashMap<String, String>,
+    statuses: HashMap<String, Status>,
     /// Cache of last-read outputs to detect changes
     last_outputs: HashMap<String, String>,
     /// Whether output should be kept (creates .keep marker file)
@@ -308,7 +309,7 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
         .map(|h| (h.as_str(), read_output(output_dir, h)))
         .collect();
 
-    let statuses: HashMap<&str, String> = hosts
+    let statuses: HashMap<&str, Status> = hosts
         .iter()
         .map(|h| (h.as_str(), read_status(output_dir, h)))
         .collect();
@@ -316,7 +317,7 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
     // Header with status summary
     let status_summary: Vec<String> = hosts
         .iter()
-        .map(|h| format!("{}:{}", h, format_status(&statuses[h.as_str()])))
+        .map(|h| format!("{}:{}", h, format_status(statuses[h.as_str()])))
         .collect();
 
     println!(
@@ -402,12 +403,13 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
 }
 
 /// Format status with ANSI color
-fn format_status(status: &str) -> String {
+fn format_status(status: Status) -> String {
+    let s = status.as_str();
     match status {
-        "running" => format!("\x1b[33m{}\x1b[0m", status),  // yellow
-        "success" => format!("\x1b[32m{}\x1b[0m", status),  // green
-        "failed" => format!("\x1b[31m{}\x1b[0m", status),   // red
-        _ => status.to_string(),
+        Status::Running => format!("\x1b[33m{}\x1b[0m", s),  // yellow
+        Status::Success => format!("\x1b[32m{}\x1b[0m", s),  // green
+        Status::Failed => format!("\x1b[31m{}\x1b[0m", s),   // red
+        Status::Pending => s.to_string(),
     }
 }
 
@@ -540,11 +542,11 @@ fn read_output(output_dir: &Path, host: &str) -> String {
 /// Clean terminal output by processing carriage returns and stripping control chars
 
 /// Read status for a host (running, success, failed, or pending)
-fn read_status(output_dir: &Path, host: &str) -> String {
+fn read_status(output_dir: &Path, host: &str) -> Status {
     let status_path = output_dir.join(host).join("status");
     fs::read_to_string(&status_path)
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "pending".to_string())
+        .map(|s| Status::from_str(&s))
+        .unwrap_or(Status::Pending)
 }
 
 

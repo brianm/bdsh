@@ -8,6 +8,35 @@ use std::process::Command;
 mod hosts;
 mod watch;
 
+/// Status of a command running on a host
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Pending,
+    Running,
+    Success,
+    Failed,
+}
+
+impl Status {
+    pub fn from_str(s: &str) -> Self {
+        match s.trim() {
+            "running" => Self::Running,
+            "success" => Self::Success,
+            "failed" => Self::Failed,
+            _ => Self::Pending,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Success => "success",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "bdsh", about = "Better Distributed Shell")]
 struct Cli {

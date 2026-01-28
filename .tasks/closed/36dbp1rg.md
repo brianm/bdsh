@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Refactor: Status should be an enum, not String'
 id: 36dbp1rg
 created: 2026-01-28T04:40:42.314232Z
-updated: 2026-01-28T04:40:42.314232Z
+updated: 2026-01-28T04:47:18.889971Z
 author: Brian McCallister
 priority: medium
 tags:
@@ -49,3 +49,8 @@ impl Status {
 # Log: 2026-01-28T04:40:42Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:47:18Z Brian McCallister
+
+Closed: Added Status enum with from_str/as_str methods, updated all usages
