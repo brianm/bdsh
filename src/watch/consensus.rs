@@ -61,10 +61,6 @@ pub(super) enum ConsensusLine {
     Differs {
         /// The most common content (shown by default)
         consensus: String,
-        /// How many hosts have the consensus version
-        consensus_count: usize,
-        /// Total number of hosts
-        total_hosts: usize,
         /// All variants: content -> list of hosts (ordered by frequency, most common first)
         variants: IndexMap<String, Vec<String>>,
         /// Hosts missing this line entirely
@@ -426,19 +422,18 @@ impl ConsensusView {
                 }
                 ConsensusLine::Differs {
                     consensus,
-                    consensus_count,
-                    total_hosts,
                     variants,
                     missing,
                     expanded,
                     expanded_hosts,
+                    ..
                 } => {
                     // Is the main line selected (not a variant)?
                     let main_line_selected = is_selected && self.selection.variant_index.is_none();
 
-                    // Main line: show consensus content with diff indicator
+                    // Main line: show consensus content with variant count indicator
                     if current_row >= scroll_offset && current_row < scroll_offset + viewport_height {
-                        let diff_count = total_hosts - consensus_count;
+                        let variant_count = variants.len();
                         let marker = if *expanded { "v" } else { ">" };
 
                         // Build the line with marker and content
@@ -454,7 +449,7 @@ impl ConsensusView {
                             Style::default()
                         };
 
-                        let diff_indicator = format!("[{}{}] ", marker, diff_count);
+                        let diff_indicator = format!("{}[{}] ", marker, variant_count);
                         lines.push(Line::from(vec![
                             Span::styled(diff_indicator, marker_style),
                             Span::styled(consensus.clone(), content_style),
@@ -589,8 +584,6 @@ pub(crate) fn compute_consensus(
         return Vec::new();
     }
 
-    let total_hosts = hosts.len();
-
     // Parse all outputs into lines
     let host_lines: Vec<(&String, Vec<&str>)> = hosts
         .iter()
@@ -625,7 +618,7 @@ pub(crate) fn compute_consensus(
             if variants.len() == 1 && missing.is_empty() {
                 ConsensusLine::Identical(variants.into_keys().next().unwrap())
             } else {
-                make_differs(variants, missing, total_hosts)
+                make_differs(variants, missing)
             }
         })
         .collect()
@@ -635,14 +628,13 @@ pub(crate) fn compute_consensus(
 fn make_differs(
     variants: IndexMap<String, Vec<String>>,
     missing: Vec<String>,
-    total_hosts: usize,
 ) -> ConsensusLine {
     // Find the most common variant (most hosts)
-    let (consensus, consensus_hosts) = variants
+    let consensus = variants
         .iter()
         .max_by_key(|(_, hosts)| hosts.len())
-        .map(|(content, hosts)| (content.clone(), hosts.len()))
-        .unwrap_or_else(|| (String::new(), 0));
+        .map(|(content, _)| content.clone())
+        .unwrap_or_default();
 
     // Sort variants by frequency (most common first)
     let mut sorted_variants: Vec<_> = variants.into_iter().collect();
@@ -651,8 +643,6 @@ fn make_differs(
 
     ConsensusLine::Differs {
         consensus,
-        consensus_count: consensus_hosts,
-        total_hosts,
         variants,
         missing,
         expanded: false,

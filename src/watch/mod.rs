@@ -336,15 +336,13 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
             }
             ConsensusLine::Differs {
                 consensus,
-                consensus_count,
-                total_hosts,
                 variants,
                 missing,
                 ..
             } => {
-                let diff_count = total_hosts - consensus_count;
-                // Show consensus with diff indicator
-                println!("\x1b[33m[{}]\x1b[0m {}", diff_count, consensus);
+                let variant_count = variants.len();
+                // Show consensus with variant count indicator
+                println!("\x1b[33m[{}]\x1b[0m {}", variant_count, consensus);
 
                 // Text mode never expands host lists, so pass None for expanded_hosts
                 let max_width = max_gutter_width(variants, missing, None);
