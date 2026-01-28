@@ -21,7 +21,6 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Spacing},
     Frame, Terminal,
 };
-// Note: similar crate still available if we need diff-based view later
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, stdout, Read, Write};

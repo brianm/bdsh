@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Refactor: Remove unused ''similar'' crate dependency'
 id: q6nnsd7x
 created: 2026-01-28T04:40:42.378518Z
-updated: 2026-01-28T04:40:42.378518Z
+updated: 2026-01-28T04:47:44.389207Z
 author: Brian McCallister
 priority: low
 tags:
@@ -30,3 +30,8 @@ Unused dependencies increase build time and binary size unnecessarily.
 # Log: 2026-01-28T04:40:42Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:47:44Z Brian McCallister
+
+Closed: Removed similar crate from Cargo.toml and comment from watch/mod.rs

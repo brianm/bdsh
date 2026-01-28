@@ -15,7 +15,6 @@ indexmap = "2"
 names = { version = "0.14.0", default-features = false }
 notify = "8.2.0"
 ratatui = "0.30"
-similar = "2.7.0"
 tempfile = "3"
 
 [dev-dependencies]
