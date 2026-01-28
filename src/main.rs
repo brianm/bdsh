@@ -83,7 +83,10 @@ fn main() -> Result<()> {
         let (source, filter) = parse_host_args(cli.host_source.as_deref(), cli.tag_filter.as_deref());
 
         if cli.command.is_empty() {
-            anyhow::bail!("Command required: bdsh [source] [filter] -- command");
+            anyhow::bail!(
+                "Command required: bdsh [source] [filter] -- command\n\
+                 Or use: bdsh --watch <output-dir> to view existing output"
+            );
         }
 
         run_command(source, filter, cli.output_dir, cli.keep, cli.no_watch, &cli.command)
