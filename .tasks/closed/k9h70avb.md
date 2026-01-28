@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Docs: Explain carriage return processing in clean_terminal_output'
 id: k9h70avb
 created: 2026-01-28T04:41:04.249078Z
-updated: 2026-01-28T04:41:04.249078Z
+updated: 2026-01-28T04:49:39.841011Z
 author: Brian McCallister
 priority: low
 tags:
@@ -39,3 +39,8 @@ This is correct terminal emulation, but the code comment just says:
 # Log: 2026-01-28T04:41:04Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:49:39Z Brian McCallister
+
+Closed: Added examples showing carriage return behavior

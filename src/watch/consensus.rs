@@ -675,7 +675,17 @@ fn make_differs(
     }
 }
 
-/// Clean terminal output by processing carriage returns and stripping ANSI codes
+/// Clean terminal output by processing carriage returns and stripping ANSI codes.
+///
+/// Carriage return (`\r`) handling simulates terminal behavior where `\r` moves
+/// the cursor to the start of the line and subsequent text overwrites from there:
+///
+/// - `"hello\rhi"` → `"hillo"` (overwrites first 2 chars, keeps rest)
+/// - `"hello\rworld"` → `"world"` (full overwrite, new text is longer)
+/// - `"a\rb\rc"` → `"c"` (multiple CRs, each overwrites from start)
+/// - `"loading...\rdone      "` → `"done      "` (progress indicator pattern)
+///
+/// This is commonly seen in progress bars, spinners, and status updates.
 pub(crate) fn clean_terminal_output(raw: &str) -> String {
     raw.lines()
         .map(|line| {
