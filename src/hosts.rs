@@ -48,11 +48,22 @@ pub fn resolve_hosts(source: Option<&str>, filter: Option<&str>) -> Result<Vec<S
     let hosts = match source {
         None => load_config()?,
         Some(s) if s.starts_with('@') => {
+            // @-prefixed sources can be file paths or shell commands.
+            // Disambiguation logic:
+            //   1. If the path exists as a file:
+            //      - If executable: run it and use stdout as hosts
+            //      - If not executable: read it as a hosts file
+            //   2. If the path doesn't exist: treat as a shell command
+            //
+            // Examples:
+            //   @./hosts.txt     -> read file (if exists) or error (if not)
+            //   @/usr/local/bin/get-hosts -> execute script
+            //   @"echo h1; echo h2" -> run shell command (quotes stripped by shell)
+            //   @aws-hosts       -> if ./aws-hosts exists: execute it; else: run as command
             let path_or_cmd = &s[1..];
             let path = Path::new(path_or_cmd);
 
             let content = if path.exists() {
-                // If path exists, read it or execute it (if executable)
                 if is_executable(path)? {
                     execute_script(path)?
                 } else {
@@ -60,7 +71,7 @@ pub fn resolve_hosts(source: Option<&str>, filter: Option<&str>) -> Result<Vec<S
                         .with_context(|| format!("Failed to read: {}", path.display()))?
                 }
             } else {
-                // If path doesn't exist, treat as shell command
+                // Path doesn't exist - treat as shell command
                 run_shell_command(path_or_cmd)?
             };
             parse_tagged_lines(&content)
