@@ -416,7 +416,7 @@ fn run_tui(
     output_dir: &Path,
 ) -> Result<()> {
     let mut state = WatchApp::new(output_dir.to_path_buf());
-    let _ = state.refresh(); // Initial refresh, ignore errors
+    state.refresh()?; // Initial refresh
     if state.tail_mode {
         state.consensus_view.scroll_to_end();
     }
