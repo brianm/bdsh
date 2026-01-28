@@ -3,7 +3,7 @@ yatl_version: 1
 title: Add config file with host tagging
 id: je7pzt7v
 created: 2026-01-27T02:44:19.277383Z
-updated: 2026-01-27T02:45:35.972885Z
+updated: 2026-01-28T04:54:16.672690Z
 author: Brian McCallister
 priority: high
 tags:
@@ -56,3 +56,8 @@ Partial implementation: created config.rs with TaggedHost parsing, tag filtering
 # Log: 2026-01-27T02:45:35Z Brian McCallister
 
 Design note: comma for OR logic. ':bsd,:linux' means hosts with bsd OR linux tags.
+
+---
+# Log: 2026-01-28T04:54:16Z Brian McCallister
+
+Closed: Already implemented in hosts.rs - config file loading, tag parsing, and AND/OR filtering all working

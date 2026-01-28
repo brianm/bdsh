@@ -118,12 +118,11 @@ fn run_shell_command(cmd: &str) -> Result<String> {
 
 /// Get the default hosts file path
 fn config_path() -> Option<PathBuf> {
+    // Try XDG_CONFIG_HOME first, then fall back to HOME/.config
     let config_dir = env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home).join(".config")
-        });
+        .or_else(|_| env::var("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .ok()?;
 
     let path = config_dir.join("bdsh").join("hosts");
     if path.exists() {

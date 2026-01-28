@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Improve: HOME fallback to ''.'' is surprising behavior'
 id: jzh8b9rv
 created: 2026-01-28T04:41:38.988930Z
-updated: 2026-01-28T04:41:38.988930Z
+updated: 2026-01-28T04:51:46.736540Z
 author: Brian McCallister
 priority: low
 tags:
@@ -37,3 +37,8 @@ This is an edge case (HOME is almost always set) but the current behavior is sur
 # Log: 2026-01-28T04:41:38Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:51:46Z Brian McCallister
+
+Closed: Changed to return None when HOME is not set instead of using '.'
