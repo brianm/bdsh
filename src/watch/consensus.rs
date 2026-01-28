@@ -54,7 +54,7 @@ pub(super) enum ConsensusLine {
 /// - ↓ on last variant: exit to next line
 /// - ↑ reverses this behavior
 /// - →/← expand/collapse the selected item
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Selection {
     /// Index into the consensus lines vector
     pub(crate) line_index: usize,
@@ -63,13 +63,6 @@ pub(crate) struct Selection {
 }
 
 impl Selection {
-    pub(crate) fn new() -> Self {
-        Self {
-            line_index: 0,
-            variant_index: None,
-        }
-    }
-
     #[allow(dead_code)]
     pub(crate) fn is_on_main_line(&self) -> bool {
         self.variant_index.is_none()
@@ -80,6 +73,7 @@ impl Selection {
 ///
 /// Handles the hierarchical display of command output differences across hosts,
 /// including expansion/collapse state and keyboard navigation.
+#[derive(Default)]
 pub(crate) struct ConsensusView {
     pub(crate) consensus: Vec<ConsensusLine>,
     pub(crate) selection: Selection,
@@ -88,11 +82,7 @@ pub(crate) struct ConsensusView {
 
 impl ConsensusView {
     pub(crate) fn new() -> Self {
-        Self {
-            consensus: Vec::new(),
-            selection: Selection::new(),
-            has_hosts: false,
-        }
+        Self::default()
     }
 
     /// Update consensus data
