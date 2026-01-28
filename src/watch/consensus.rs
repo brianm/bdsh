@@ -9,6 +9,49 @@ use ratatui::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Format a host gutter string based on host count and expansion state.
+///
+/// - Single host: returns the hostname
+/// - Multiple hosts, expanded: returns comma-separated list
+/// - Multiple hosts, collapsed: returns `[N]` where N is count
+pub(super) fn format_gutter(hosts: &[String], expanded: bool) -> String {
+    match hosts.len() {
+        1 => hosts[0].clone(),
+        n if expanded => hosts.join(","),
+        n => format!("[{}]", n),
+    }
+}
+
+/// Calculate the display width of a gutter entry.
+pub(super) fn gutter_width(hosts: &[String], expanded: bool) -> usize {
+    format_gutter(hosts, expanded).len()
+}
+
+/// Calculate the maximum gutter width needed for alignment across all variants.
+///
+/// Takes variant hosts, missing hosts, and an optional set of expanded host keys.
+/// Returns the max width with a minimum of 4 characters.
+pub(super) fn max_gutter_width(
+    variants: &IndexMap<String, Vec<String>>,
+    missing: &[String],
+    expanded_hosts: Option<&HashSet<String>>,
+) -> usize {
+    let empty = HashSet::new();
+    let expanded = expanded_hosts.unwrap_or(&empty);
+
+    variants
+        .iter()
+        .map(|(content, hosts)| gutter_width(hosts, expanded.contains(content)))
+        .chain(if missing.is_empty() {
+            None
+        } else {
+            Some(gutter_width(missing, expanded.contains("<missing>")))
+        })
+        .max()
+        .unwrap_or(4)
+        .max(4)
+}
+
 /// A line in the consensus view
 #[derive(Clone, Debug)]
 pub(super) enum ConsensusLine {
@@ -422,35 +465,7 @@ impl ConsensusView {
                     // Expanded variant details
                     if *expanded {
                         let variant_count = variants.len();
-
-                        // Calculate max gutter width for alignment
-                        let max_gutter_width = variants
-                            .iter()
-                            .map(|(content, hosts)| {
-                                let host_count = hosts.len();
-                                if host_count == 1 {
-                                    hosts[0].len()
-                                } else if expanded_hosts.contains(content) {
-                                    hosts.join(",").len()
-                                } else {
-                                    format!("[{}]", host_count).len()
-                                }
-                            })
-                            .chain(if missing.is_empty() {
-                                None
-                            } else {
-                                let host_count = missing.len();
-                                Some(if host_count == 1 {
-                                    missing[0].len()
-                                } else if expanded_hosts.contains("<missing>") {
-                                    missing.join(",").len()
-                                } else {
-                                    format!("[{}]", host_count).len()
-                                })
-                            })
-                            .max()
-                            .unwrap_or(4)
-                            .max(4); // Minimum width of 4
+                        let max_width = max_gutter_width(variants, missing, Some(expanded_hosts));
 
                         for (idx, (content, hosts)) in variants.iter().enumerate() {
                             let variant_selected =
@@ -458,20 +473,8 @@ impl ConsensusView {
 
                             if current_row >= scroll_offset && current_row < scroll_offset + viewport_height
                             {
-                                let host_count = hosts.len();
                                 let is_hosts_expanded = expanded_hosts.contains(content);
-
-                                // Format the gutter based on host count and expansion state
-                                let gutter = if host_count == 1 {
-                                    // Single host - show name
-                                    hosts[0].clone()
-                                } else if is_hosts_expanded {
-                                    // Multiple hosts, expanded - show full list
-                                    hosts.join(",")
-                                } else {
-                                    // Multiple hosts, collapsed - show [N]
-                                    format!("[{}]", host_count)
-                                };
+                                let gutter = format_gutter(hosts, is_hosts_expanded);
 
                                 let gutter_style = if variant_selected {
                                     Style::default().fg(Color::Cyan).bg(Color::DarkGray)
@@ -487,7 +490,7 @@ impl ConsensusView {
 
                                 lines.push(Line::from(vec![
                                     Span::styled(
-                                        format!("  {:>width$} ", gutter, width = max_gutter_width),
+                                        format!("  {:>width$} ", gutter, width = max_width),
                                         gutter_style,
                                     ),
                                     Span::styled(
@@ -511,16 +514,8 @@ impl ConsensusView {
 
                             if current_row >= scroll_offset && current_row < scroll_offset + viewport_height
                             {
-                                let host_count = missing.len();
                                 let is_hosts_expanded = expanded_hosts.contains("<missing>");
-
-                                let gutter = if host_count == 1 {
-                                    missing[0].clone()
-                                } else if is_hosts_expanded {
-                                    missing.join(",")
-                                } else {
-                                    format!("[{}]", host_count)
-                                };
+                                let gutter = format_gutter(missing, is_hosts_expanded);
 
                                 let gutter_style = if variant_selected {
                                     Style::default().fg(Color::Cyan).bg(Color::DarkGray)
@@ -536,7 +531,7 @@ impl ConsensusView {
 
                                 lines.push(Line::from(vec![
                                     Span::styled(
-                                        format!("  {:>width$} ", gutter, width = max_gutter_width),
+                                        format!("  {:>width$} ", gutter, width = max_width),
                                         gutter_style,
                                     ),
                                     Span::styled(

@@ -5,7 +5,8 @@ mod status_bar;
 use crate::Status;
 use anyhow::Result;
 use consensus::{
-    clean_terminal_output, compute_consensus, ConsensusLine, ConsensusView, ConsensusViewWidget,
+    clean_terminal_output, compute_consensus, format_gutter, max_gutter_width, ConsensusLine,
+    ConsensusView, ConsensusViewWidget,
 };
 use help_bar::HelpBar;
 use status_bar::StatusBar;
@@ -345,53 +346,25 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
                 // Show consensus with diff indicator
                 println!("\x1b[33m[{}]\x1b[0m {}", diff_count, consensus);
 
-                // Calculate max gutter width for alignment
-                let max_gutter_width = variants
-                    .iter()
-                    .map(|(_, hosts)| {
-                        if hosts.len() == 1 {
-                            hosts[0].len()
-                        } else {
-                            format!("[{}]", hosts.len()).len()
-                        }
-                    })
-                    .chain(if missing.is_empty() {
-                        None
-                    } else if missing.len() == 1 {
-                        Some(missing[0].len())
-                    } else {
-                        Some(format!("[{}]", missing.len()).len())
-                    })
-                    .max()
-                    .unwrap_or(4)
-                    .max(4);
+                // Text mode never expands host lists, so pass None for expanded_hosts
+                let max_width = max_gutter_width(variants, missing, None);
 
                 // Show variants with host gutter on left
                 for (content, hosts) in variants.iter() {
-                    let host_count = hosts.len();
-                    let gutter = if host_count == 1 {
-                        hosts[0].clone()
-                    } else {
-                        format!("[{}]", host_count)
-                    };
+                    let gutter = format_gutter(hosts, false);
                     println!(
                         "  \x1b[36m{:>width$}\x1b[0m │ {}",
                         gutter,
                         content,
-                        width = max_gutter_width
+                        width = max_width
                     );
                 }
                 if !missing.is_empty() {
-                    let host_count = missing.len();
-                    let gutter = if host_count == 1 {
-                        missing[0].clone()
-                    } else {
-                        format!("[{}]", host_count)
-                    };
+                    let gutter = format_gutter(missing, false);
                     println!(
                         "  \x1b[36m{:>width$}\x1b[0m │ \x1b[90m<missing>\x1b[0m",
                         gutter,
-                        width = max_gutter_width
+                        width = max_width
                     );
                 }
             }
