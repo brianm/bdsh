@@ -33,11 +33,32 @@ pub(super) enum ConsensusLine {
     },
 }
 
-/// Selection - makes the two-level selection model explicit
+/// Two-level selection model for hierarchical consensus navigation.
+///
+/// The consensus view displays a list of lines, where some lines (Differs) can be
+/// expanded to show variants. This creates a two-level hierarchy:
+///
+/// ```text
+/// Line 0: "identical line"              <- line_index=0, variant_index=None
+/// Line 1: "[2] consensus output"        <- line_index=1, variant_index=None (collapsed)
+/// Line 2: "[v2] consensus output"       <- line_index=2, variant_index=None (expanded, main)
+///           host1 │ "variant A"         <- line_index=2, variant_index=Some(0)
+///           host2 │ "variant B"         <- line_index=2, variant_index=Some(1)
+///            [2]  │ <missing>           <- line_index=2, variant_index=Some(2)
+/// Line 3: "another line"                <- line_index=3, variant_index=None
+/// ```
+///
+/// Navigation behavior:
+/// - ↓ on collapsed Differs: move to next line
+/// - ↓ on expanded Differs main line: enter variants (variant_index = Some(0))
+/// - ↓ on last variant: exit to next line
+/// - ↑ reverses this behavior
+/// - →/← expand/collapse the selected item
 #[derive(Clone, Debug)]
 pub(crate) struct Selection {
+    /// Index into the consensus lines vector
     pub(crate) line_index: usize,
-    /// None = main line selected, Some(idx) = variant at index selected
+    /// None = main line selected, Some(idx) = variant at index within expanded Differs
     pub(crate) variant_index: Option<usize>,
 }
 
@@ -55,7 +76,10 @@ impl Selection {
     }
 }
 
-/// ConsensusView component - all consensus rendering, navigation, expansion logic
+/// ConsensusView - manages consensus data, selection state, and rendering.
+///
+/// Handles the hierarchical display of command output differences across hosts,
+/// including expansion/collapse state and keyboard navigation.
 pub(crate) struct ConsensusView {
     pub(crate) consensus: Vec<ConsensusLine>,
     pub(crate) selection: Selection,

@@ -3,7 +3,7 @@ yatl_version: 1
 title: 'Docs: Add high-level doc comment for ConsensusView selection model'
 id: sda2ycbz
 created: 2026-01-28T04:41:04.182491Z
-updated: 2026-01-28T04:41:04.182491Z
+updated: 2026-01-28T04:49:10.846398Z
 author: Brian McCallister
 priority: medium
 tags:
@@ -41,3 +41,8 @@ pub(crate) struct Selection {
 # Log: 2026-01-28T04:41:04Z Brian McCallister
 
 Created task.
+
+---
+# Log: 2026-01-28T04:49:10Z Brian McCallister
+
+Closed: Added comprehensive doc comments explaining the two-level selection model
