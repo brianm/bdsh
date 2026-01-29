@@ -304,6 +304,12 @@ jobs:
           merge-multiple: true
       # This is extra complex because you can make your Formula name not match your app name
       # so we need to find releases with a *.rb file, and publish with that filename.
+      - name: Patch bdsh formula for man page
+        run: |
+          if [ -f "Formula/bdsh.rb" ]; then
+            # Add man page installation to bdsh formula
+            sed -i 's/def install/def install\n    man1.install "bdsh.1" if File.exist?("bdsh.1")/' "Formula/bdsh.rb"
+          fi
       - name: Commit formula files
         run: |
           git config --global user.name "${GITHUB_USER}"
