@@ -93,7 +93,7 @@ cargo test            # Run tests
 
 ### Man Page
 
-The man page is checked in at `doc/bdsh.1` and must be regenerated after changing CLI options:
+The man page is checked in at `doc/bdsh.1` and must be regenerated after changing CLI options and after making a release.
 
 ```bash
 # Regenerate man page after CLI changes
