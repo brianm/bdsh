@@ -38,7 +38,7 @@ impl Status {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "bdsh", about = "Better Distributed Shell")]
+#[command(name = "bdsh", about = "Better Distributed Shell", version)]
 struct Cli {
     /// Watch an output directory instead of running commands
     #[arg(long, conflicts_with_all = ["host_source", "tag_filter", "command"])]
