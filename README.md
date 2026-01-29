@@ -91,6 +91,20 @@ cargo build --release # Release build
 cargo test            # Run tests
 ```
 
+### Man Page
+
+The man page is checked in at `doc/bdsh.1` and must be regenerated after changing CLI options:
+
+```bash
+# Regenerate man page after CLI changes
+cargo test --test generate_man -- --ignored --nocapture
+
+# Tests will fail if man page is out of date
+cargo test
+```
+
+The test suite includes a check that ensures the man page stays synchronized with the CLI definition in `src/cli.rs`.
+
 ### Making a Release
 
 Releases are automated via [cargo-dist](https://github.com/axodotdev/cargo-dist). When a version tag is pushed, GitHub Actions builds binaries for macOS and Linux, creates a GitHub release, and updates the Homebrew formula.
