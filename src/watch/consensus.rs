@@ -1,8 +1,9 @@
+use crate::colors::ColorScheme;
 use indexmap::IndexMap;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     symbols::merge::MergeStrategy,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget},
@@ -401,6 +402,7 @@ impl ConsensusView {
         &self,
         scroll_offset: usize,
         viewport_height: usize,
+        colors: &ColorScheme,
     ) -> Vec<Line<'_>> {
         let mut lines: Vec<Line> = Vec::new();
         let mut current_row = 0;
@@ -412,7 +414,7 @@ impl ConsensusView {
                 ConsensusLine::Identical(content) => {
                     if current_row >= scroll_offset && current_row < scroll_offset + viewport_height {
                         let style = if is_selected {
-                            Style::default().bg(Color::DarkGray)
+                            Style::default().bg(colors.selection_bg())
                         } else {
                             Style::default()
                         };
@@ -438,13 +440,13 @@ impl ConsensusView {
 
                         // Build the line with marker and content
                         let marker_style = if main_line_selected {
-                            Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+                            Style::default().fg(colors.diff_marker()).bg(colors.selection_bg())
                         } else {
-                            Style::default().fg(Color::Yellow)
+                            Style::default().fg(colors.diff_marker())
                         };
 
                         let content_style = if main_line_selected {
-                            Style::default().bg(Color::DarkGray)
+                            Style::default().bg(colors.selection_bg())
                         } else {
                             Style::default()
                         };
@@ -472,15 +474,15 @@ impl ConsensusView {
                                 let gutter = format_gutter(hosts, is_hosts_expanded);
 
                                 let gutter_style = if variant_selected {
-                                    Style::default().fg(Color::Cyan).bg(Color::DarkGray)
+                                    Style::default().fg(colors.gutter()).bg(colors.selection_bg())
                                 } else {
-                                    Style::default().fg(Color::Cyan)
+                                    Style::default().fg(colors.gutter())
                                 };
 
                                 let content_style = if variant_selected {
-                                    Style::default().fg(Color::Gray).bg(Color::DarkGray)
+                                    Style::default().fg(colors.variant_text()).bg(colors.selection_bg())
                                 } else {
-                                    Style::default().fg(Color::Gray)
+                                    Style::default().fg(colors.variant_text())
                                 };
 
                                 lines.push(Line::from(vec![
@@ -491,9 +493,9 @@ impl ConsensusView {
                                     Span::styled(
                                         "│ ",
                                         if variant_selected {
-                                            Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+                                            Style::default().fg(colors.dark_gray()).bg(colors.selection_bg())
                                         } else {
-                                            Style::default().fg(Color::DarkGray)
+                                            Style::default().fg(colors.dark_gray())
                                         },
                                     ),
                                     Span::styled(truncate(content, 60), content_style),
@@ -513,15 +515,15 @@ impl ConsensusView {
                                 let gutter = format_gutter(missing, is_hosts_expanded);
 
                                 let gutter_style = if variant_selected {
-                                    Style::default().fg(Color::Cyan).bg(Color::DarkGray)
+                                    Style::default().fg(colors.gutter()).bg(colors.selection_bg())
                                 } else {
-                                    Style::default().fg(Color::Cyan)
+                                    Style::default().fg(colors.gutter())
                                 };
 
                                 let content_style = if variant_selected {
-                                    Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+                                    Style::default().fg(colors.dark_gray()).bg(colors.selection_bg())
                                 } else {
-                                    Style::default().fg(Color::DarkGray)
+                                    Style::default().fg(colors.dark_gray())
                                 };
 
                                 lines.push(Line::from(vec![
@@ -532,9 +534,9 @@ impl ConsensusView {
                                     Span::styled(
                                         "│ ",
                                         if variant_selected {
-                                            Style::default().bg(Color::DarkGray)
+                                            Style::default().bg(colors.selection_bg())
                                         } else {
-                                            Style::default().fg(Color::DarkGray)
+                                            Style::default().fg(colors.dark_gray())
                                         },
                                     ),
                                     Span::styled("<missing>", content_style),
@@ -550,12 +552,12 @@ impl ConsensusView {
         if lines.is_empty() && !self.has_hosts {
             lines.push(Line::from(Span::styled(
                 "No host directories found...",
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(colors.diff_marker()),
             )));
         } else if lines.is_empty() {
             lines.push(Line::from(Span::styled(
                 "(no output yet)",
-                Style::default().fg(Color::Gray),
+                Style::default().fg(colors.variant_text()),
             )));
         }
 
@@ -800,10 +802,18 @@ fn strip_ansi_and_control(s: &str) -> String {
     result
 }
 
-/// ConsensusViewWidget - zero-sized widget for rendering ConsensusView state
-pub(super) struct ConsensusViewWidget;
+/// ConsensusViewWidget - widget for rendering ConsensusView state with color scheme
+pub(super) struct ConsensusViewWidget<'a> {
+    colors: &'a ColorScheme,
+}
 
-impl StatefulWidget for ConsensusViewWidget {
+impl<'a> ConsensusViewWidget<'a> {
+    pub(super) fn new(colors: &'a ColorScheme) -> Self {
+        Self { colors }
+    }
+}
+
+impl<'a> StatefulWidget for ConsensusViewWidget<'a> {
     type State = ConsensusView;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut ConsensusView) {
@@ -813,7 +823,7 @@ impl StatefulWidget for ConsensusViewWidget {
         let scroll_offset = state.calculate_scroll_offset(inner_height);
 
         // Build display lines
-        let lines = state.build_display_lines(scroll_offset, inner_height);
+        let lines = state.build_display_lines(scroll_offset, inner_height, self.colors);
 
         let paragraph = Paragraph::new(lines).block(
             Block::default()

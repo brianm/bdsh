@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod cli;
+mod colors;
 mod hosts;
 mod watch;
 

@@ -100,6 +100,10 @@ a subdirectory containing:
 
 Use `-o/--output-dir` to specify a directory, and `-k/--keep` to preserve it.
 
+# ENVIRONMENT
+
+- **NO_COLOR** - When set (to any value), disables colored output. See https://no-color.org/ for more information.
+
 # FILES
 
 - **~/.config/bdsh/hosts** - Default hosts file. Can be plain text or executable.
