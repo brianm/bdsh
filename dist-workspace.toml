@@ -7,16 +7,17 @@ members = ["cargo:."]
 cargo-dist-version = "0.30.3"
 # CI backends to support
 ci = "github"
+# Allow custom workflow modifications for man page installation
+allow-dirty = ["ci"]
 # The installers to generate for each app
 installers = ["homebrew"]
-# Homebrew tap to publish to
+# A GitHub repo to push Homebrew formulas to
 tap = "brianm/homebrew-tools"
-# Publish jobs to run
+# Publish jobs to run in CI
 publish-jobs = ["homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
-
-# Include man page in releases
+# Extra static files to include in each App (path relative to this Cargo.toml's dir)
 include = ["doc/bdsh.1"]
 
 # Runtime dependencies
