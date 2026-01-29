@@ -1,8 +1,9 @@
+use crate::colors::ColorScheme;
 use crate::Status;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     symbols::merge::MergeStrategy,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
@@ -18,6 +19,7 @@ pub(crate) struct StatusBar<'a> {
     pub(crate) spinner_frame: usize,
     pub(crate) tail_mode: bool,
     pub(crate) keep_output: bool,
+    pub(crate) colors: &'a ColorScheme,
 }
 
 impl<'a> StatusBar<'a> {
@@ -29,6 +31,7 @@ impl<'a> StatusBar<'a> {
         spinner_frame: usize,
         tail_mode: bool,
         keep_output: bool,
+        colors: &'a ColorScheme,
     ) -> Self {
         Self {
             hosts,
@@ -38,6 +41,7 @@ impl<'a> StatusBar<'a> {
             spinner_frame,
             tail_mode,
             keep_output,
+            colors,
         }
     }
 }
@@ -68,17 +72,17 @@ impl Widget for StatusBar<'_> {
                     let indicator = format!("⌨[{}]", window_num);
                     // Pulse between bright and dim magenta
                     let color = if show_input_indicator {
-                        Color::Magenta
+                        self.colors.input_waiting()
                     } else {
-                        Color::Rgb(139, 69, 139) // Dim magenta
+                        self.colors.input_waiting_dim()
                     };
                     spans.push(Span::styled(indicator, Style::default().fg(color)));
                 } else {
-                    let (symbol, color): (&str, Color) = match status {
-                        Status::Running => (&spinner_str, Color::Yellow),
-                        Status::Success => ("✓", Color::Green),
-                        Status::Failed => ("✗", Color::Red),
-                        Status::Pending => ("?", Color::Gray),
+                    let (symbol, color) = match status {
+                        Status::Running => (spinner_str.as_str(), self.colors.running()),
+                        Status::Success => ("✓", self.colors.success()),
+                        Status::Failed => ("✗", self.colors.failed()),
+                        Status::Pending => ("?", self.colors.pending()),
                     };
                     spans.push(Span::styled(symbol.to_string(), Style::default().fg(color)));
                 }

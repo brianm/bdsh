@@ -2,6 +2,7 @@ mod consensus;
 mod help_bar;
 mod status_bar;
 
+use crate::colors::ColorScheme;
 use crate::Status;
 use anyhow::Result;
 use consensus::{
@@ -84,6 +85,7 @@ struct WatchApp {
 
     // Components
     consensus_view: ConsensusView,
+    color_scheme: ColorScheme,
 
     hosts: Vec<String>,
     statuses: HashMap<String, Status>,
@@ -107,6 +109,7 @@ impl WatchApp {
         Self {
             output_dir,
             consensus_view: ConsensusView::new(),
+            color_scheme: ColorScheme::from_env(),
             hosts: Vec::new(),
             statuses: HashMap::new(),
             last_outputs: HashMap::new(),
@@ -282,12 +285,14 @@ pub fn run(output_dir: &Path) -> Result<()> {
 fn run_text_mode(output_dir: &Path) -> Result<()> {
     println!("Watching: {}", output_dir.display());
 
+    let colors = ColorScheme::from_env();
+
     // Initial render
     let hosts = discover_hosts(output_dir)?;
     if hosts.is_empty() {
         println!("No host directories found yet...");
     } else {
-        render_text_consensus(output_dir, &hosts)?;
+        render_text_consensus(output_dir, &hosts, &colors)?;
     }
 
     // Set up channels for file events and stdin EOF
@@ -332,7 +337,7 @@ fn run_text_mode(output_dir: &Path) -> Result<()> {
                 clear_screen();
                 let hosts = discover_hosts(output_dir)?;
                 if !hosts.is_empty() {
-                    render_text_consensus(output_dir, &hosts)?;
+                    render_text_consensus(output_dir, &hosts, &colors)?;
                 }
             }
             Ok(TextEvent::StdinClosed) => {
@@ -358,7 +363,7 @@ fn clear_screen() {
 }
 
 /// Render consensus view as plain text
-fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
+fn render_text_consensus(output_dir: &Path, hosts: &[String], colors: &ColorScheme) -> Result<()> {
     if hosts.is_empty() {
         println!("No hosts found.");
         return Ok(());
@@ -378,7 +383,7 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
     // Header with status summary
     let status_summary: Vec<String> = hosts
         .iter()
-        .map(|h| format!("{}:{}", h, format_status(statuses[h.as_str()])))
+        .map(|h| format!("{}:{}", h, format_status(statuses[h.as_str()], colors)))
         .collect();
 
     println!(
@@ -403,7 +408,8 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
             } => {
                 let variant_count = variants.len();
                 // Show consensus with variant count indicator
-                println!("\x1b[33m[{}]\x1b[0m {}", variant_count, consensus);
+                let formatted_marker = colors.ansi_yellow(&format!("[{}]", variant_count));
+                println!("{} {}", formatted_marker, consensus);
 
                 // Text mode never expands host lists, so pass None for expanded_hosts
                 let max_width = max_gutter_width(variants, missing, None);
@@ -411,20 +417,14 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
                 // Show variants with host gutter on left
                 for (content, hosts) in variants.iter() {
                     let gutter = format_gutter(hosts, false);
-                    println!(
-                        "  \x1b[36m{:>width$}\x1b[0m │ {}",
-                        gutter,
-                        content,
-                        width = max_width
-                    );
+                    let formatted_gutter = colors.ansi_cyan(&format!("{:>width$}", gutter, width = max_width));
+                    println!("  {} │ {}", formatted_gutter, content);
                 }
                 if !missing.is_empty() {
                     let gutter = format_gutter(missing, false);
-                    println!(
-                        "  \x1b[36m{:>width$}\x1b[0m │ \x1b[90m<missing>\x1b[0m",
-                        gutter,
-                        width = max_width
-                    );
+                    let formatted_gutter = colors.ansi_cyan(&format!("{:>width$}", gutter, width = max_width));
+                    let formatted_missing = colors.ansi_gray("<missing>");
+                    println!("  {} │ {}", formatted_gutter, formatted_missing);
                 }
             }
         }
@@ -434,12 +434,12 @@ fn render_text_consensus(output_dir: &Path, hosts: &[String]) -> Result<()> {
 }
 
 /// Format status with ANSI color
-fn format_status(status: Status) -> String {
+fn format_status(status: Status, colors: &ColorScheme) -> String {
     let s = status.as_str();
     match status {
-        Status::Running => format!("\x1b[33m{}\x1b[0m", s),  // yellow
-        Status::Success => format!("\x1b[32m{}\x1b[0m", s),  // green
-        Status::Failed => format!("\x1b[31m{}\x1b[0m", s),   // red
+        Status::Running => colors.ansi_yellow(s),
+        Status::Success => colors.ansi_green(s),
+        Status::Failed => colors.ansi_red(s),
         Status::Pending => s.to_string(),
     }
 }
@@ -533,10 +533,11 @@ fn render_ui(f: &mut Frame, state: &mut WatchApp, spinner: char) {
         state.spinner_frame,
         state.tail_mode,
         state.keep_output,
+        &state.color_scheme,
     );
     f.render_widget(status_bar, chunks[0]);
 
-    f.render_stateful_widget(ConsensusViewWidget, chunks[1], &mut state.consensus_view);
+    f.render_stateful_widget(ConsensusViewWidget::new(&state.color_scheme), chunks[1], &mut state.consensus_view);
 
     f.render_widget(HelpBar, chunks[2]);
 }
