@@ -102,7 +102,7 @@ Use `-o/--output-dir` to specify a directory, and `-k/--keep` to preserve it.
 
 # ENVIRONMENT
 
-- **NO_COLOR** - When set (to any value), disables colored output. See https://no-color.org/ for more information.
+- **NO_COLOR** - When set (to any value), disables colored output.
 
 # FILES
 
