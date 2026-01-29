@@ -664,10 +664,13 @@ fn make_differs(
 pub(crate) fn clean_terminal_output(raw: &str) -> String {
     raw.lines()
         .map(|line| {
+            // Strip ANSI escape sequences FIRST (before CR processing mangles them)
+            let stripped = strip_ansi_and_control(line);
+
             // Process carriage returns: text after \r overwrites from start of line
-            let processed = if line.contains('\r') {
+            if stripped.contains('\r') {
                 let mut result = String::new();
-                for segment in line.split('\r') {
+                for segment in stripped.split('\r') {
                     if segment.is_empty() {
                         continue;
                     }
@@ -688,11 +691,8 @@ pub(crate) fn clean_terminal_output(raw: &str) -> String {
                 }
                 result
             } else {
-                line.to_string()
-            };
-
-            // Strip ANSI escape sequences and other control characters
-            strip_ansi_and_control(&processed)
+                stripped
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -705,16 +705,90 @@ fn strip_ansi_and_control(s: &str) -> String {
 
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // ANSI escape sequence - skip until end
-            if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                // Skip until we hit a letter (end of sequence)
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
+            match chars.peek() {
+                // CSI sequence: \x1b[ ... <letter>
+                Some(&'[') => {
+                    chars.next(); // consume '['
+                    // Skip until we hit a letter (end of sequence)
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
+                // OSC sequence: \x1b] ... \x07 or \x1b\\ or \x9c
+                Some(&']') => {
+                    chars.next(); // consume ']'
+                    // Skip until terminator (BEL, ST, or 8-bit ST)
+                    while let Some(&next) = chars.peek() {
+                        if next == '\x07' || next == '\u{9c}' {
+                            chars.next();
+                            break;
+                        } else if next == '\x1b' {
+                            chars.next();
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                // DCS sequence: \x1bP ... \x1b\\ or \x9c
+                Some(&'P') => {
+                    chars.next(); // consume 'P'
+                    // Skip until ST terminator
+                    while let Some(&next) = chars.peek() {
+                        if next == '\u{9c}' {
+                            chars.next();
+                            break;
+                        } else if next == '\x1b' {
+                            chars.next();
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                // Other escape sequences - skip next char
+                _ => {
+                    chars.next();
+                }
+            }
+        } else if c == '\u{9d}' {
+            // 8-bit OSC introducer - skip until terminator
+            while let Some(&next) = chars.peek() {
+                if next == '\x07' || next == '\u{9c}' {
+                    chars.next();
+                    break;
+                } else if next == '\x1b' {
+                    chars.next();
+                    if chars.peek() == Some(&'\\') {
+                        chars.next();
+                    }
+                    break;
+                }
+                chars.next();
+            }
+        } else if c == ']' && chars.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            // Bare ] followed by digits - likely partial OSC sequence, skip to terminator or space
+            while let Some(&next) = chars.peek() {
+                if next == '\x07' || next == '\u{9c}' || next == ' ' || next == '\n' {
+                    if next == '\x07' || next == '\u{9c}' {
+                        chars.next();
+                    }
+                    break;
+                } else if next == '\x1b' {
+                    chars.next();
+                    if chars.peek() == Some(&'\\') {
+                        chars.next();
+                    }
+                    break;
+                }
+                chars.next();
             }
         } else if c.is_control() && c != '\t' {
             // Skip control characters except tab

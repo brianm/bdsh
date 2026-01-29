@@ -13,7 +13,9 @@ use std::collections::HashMap;
 pub(crate) struct StatusBar<'a> {
     pub(crate) hosts: &'a [String],
     pub(crate) statuses: &'a HashMap<String, Status>,
+    pub(crate) waiting_for_input: &'a HashMap<String, bool>,
     pub(crate) spinner: char,
+    pub(crate) spinner_frame: usize,
     pub(crate) tail_mode: bool,
     pub(crate) keep_output: bool,
 }
@@ -22,14 +24,18 @@ impl<'a> StatusBar<'a> {
     pub(crate) fn new(
         hosts: &'a [String],
         statuses: &'a HashMap<String, Status>,
+        waiting_for_input: &'a HashMap<String, bool>,
         spinner: char,
+        spinner_frame: usize,
         tail_mode: bool,
         keep_output: bool,
     ) -> Self {
         Self {
             hosts,
             statuses,
+            waiting_for_input,
             spinner,
+            spinner_frame,
             tail_mode,
             keep_output,
         }
@@ -39,23 +45,46 @@ impl<'a> StatusBar<'a> {
 impl Widget for StatusBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let spinner_str = self.spinner.to_string();
+        // Blink the input indicator at a slower rate than the spinner (~400ms on/off)
+        let show_input_indicator = (self.spinner_frame / 5) % 2 == 0;
+
         let status_items: Vec<Span> = self
             .hosts
             .iter()
-            .flat_map(|host| {
+            .enumerate()
+            .flat_map(|(idx, host)| {
                 let status = self.statuses.get(host).copied().unwrap_or(Status::Pending);
-                let (symbol, color): (&str, Color) = match status {
-                    Status::Running => (&spinner_str, Color::Yellow),
-                    Status::Success => ("✓", Color::Green),
-                    Status::Failed => ("✗", Color::Red),
-                    Status::Pending => ("?", Color::Gray),
-                };
-                vec![
+                let is_waiting = self.waiting_for_input.get(host).copied().unwrap_or(false);
+
+                let mut spans = vec![
                     Span::raw(host.clone()),
                     Span::raw(":"),
-                    Span::styled(symbol.to_string(), Style::default().fg(color)),
-                    Span::raw("  "),
-                ]
+                ];
+
+                // If waiting for input, show pulsing keyboard indicator instead of spinner
+                // Window number is idx + 1 (window 0 is watch)
+                if is_waiting {
+                    let window_num = idx + 1;
+                    let indicator = format!("⌨[{}]", window_num);
+                    // Pulse between bright and dim magenta
+                    let color = if show_input_indicator {
+                        Color::Magenta
+                    } else {
+                        Color::Rgb(139, 69, 139) // Dim magenta
+                    };
+                    spans.push(Span::styled(indicator, Style::default().fg(color)));
+                } else {
+                    let (symbol, color): (&str, Color) = match status {
+                        Status::Running => (&spinner_str, Color::Yellow),
+                        Status::Success => ("✓", Color::Green),
+                        Status::Failed => ("✗", Color::Red),
+                        Status::Pending => ("?", Color::Gray),
+                    };
+                    spans.push(Span::styled(symbol.to_string(), Style::default().fg(color)));
+                }
+
+                spans.push(Span::raw("  "));
+                spans
             })
             .collect();
 

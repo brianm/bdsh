@@ -33,9 +33,50 @@ use std::time::{Duration, Instant};
 const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL_MS: u64 = 80;
 
+/// Patterns that suggest a process is waiting for user input
+const INPUT_PROMPT_PATTERNS: &[&str] = &[
+    "password:",
+    "passphrase",
+    "[y/n]",
+    "[Y/n]",
+    "[n/Y]",
+    "[yes/no]",
+    "(yes/no)",
+    "continue?",
+    "proceed?",
+    "confirm",
+    "enter to continue",
+    "press enter",
+    "press any key",
+    ": $",
+    "? $",
+    "> ",
+    "read>",
+];
 
 
 
+
+
+/// Detect if output suggests the process is waiting for user input
+fn detect_input_prompt(output: &str) -> bool {
+    // Get last 500 chars to catch prompts without trailing newline
+    // (lines() only returns complete lines, missing partial prompts)
+    let tail: String = output
+        .chars()
+        .rev()
+        .take(500)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    let tail_lower = tail.to_lowercase();
+
+
+    INPUT_PROMPT_PATTERNS
+        .iter()
+        .any(|pattern| tail_lower.contains(&pattern.to_lowercase()))
+}
 
 /// WatchApp - coordinator for the watch mode TUI
 struct WatchApp {
@@ -48,6 +89,8 @@ struct WatchApp {
     statuses: HashMap<String, Status>,
     /// Cache of last-read outputs to detect changes
     last_outputs: HashMap<String, String>,
+    /// Hosts that appear to be waiting for input
+    waiting_for_input: HashMap<String, bool>,
     /// Whether output should be kept (creates .keep marker file)
     keep_output: bool,
     /// Spinner animation state
@@ -67,6 +110,7 @@ impl WatchApp {
             hosts: Vec::new(),
             statuses: HashMap::new(),
             last_outputs: HashMap::new(),
+            waiting_for_input: HashMap::new(),
             keep_output,
             spinner_frame: 0,
             spinner_last_update: Instant::now(),
@@ -104,10 +148,27 @@ impl WatchApp {
 
         // Read outputs
         if !self.hosts.is_empty() {
-            let outputs: HashMap<String, String> = self
+            // Read raw outputs for prompt detection (before cleaning strips incomplete lines)
+            let raw_outputs: HashMap<String, String> = self
                 .hosts
                 .iter()
-                .map(|h| (h.clone(), read_output(&self.output_dir, h)))
+                .map(|h| (h.clone(), read_raw_output(&self.output_dir, h)))
+                .collect();
+
+            // Detect hosts waiting for input (only for running hosts)
+            self.waiting_for_input = raw_outputs
+                .iter()
+                .filter(|(h, _)| {
+                    self.statuses.get(*h).copied() == Some(Status::Running)
+                })
+                .map(|(h, output)| (h.clone(), detect_input_prompt(output)))
+                .filter(|(_, waiting)| *waiting)
+                .collect();
+
+            // Clean outputs for consensus display
+            let outputs: HashMap<String, String> = raw_outputs
+                .into_iter()
+                .map(|(h, raw)| (h, clean_terminal_output(&raw)))
                 .collect();
 
             // Only rebuild consensus if outputs changed
@@ -464,7 +525,15 @@ fn render_ui(f: &mut Frame, state: &mut WatchApp, spinner: char) {
         .spacing(Spacing::Overlap(1))
         .split(f.area());
 
-    let status_bar = StatusBar::new(&state.hosts, &state.statuses, spinner, state.tail_mode, state.keep_output);
+    let status_bar = StatusBar::new(
+        &state.hosts,
+        &state.statuses,
+        &state.waiting_for_input,
+        spinner,
+        state.spinner_frame,
+        state.tail_mode,
+        state.keep_output,
+    );
     f.render_widget(status_bar, chunks[0]);
 
     f.render_stateful_widget(ConsensusViewWidget, chunks[1], &mut state.consensus_view);
@@ -501,12 +570,15 @@ fn discover_hosts(output_dir: &Path) -> Result<Vec<String>> {
     Ok(hosts)
 }
 
-/// Read output log for a host
-fn read_output(output_dir: &Path, host: &str) -> String {
+/// Read raw output log for a host (for prompt detection)
+fn read_raw_output(output_dir: &Path, host: &str) -> String {
     let log_path = output_dir.join(host).join("out.log");
-    let raw = fs::read_to_string(&log_path).unwrap_or_default();
-    // Process carriage returns and clean up control characters
-    clean_terminal_output(&raw)
+    fs::read_to_string(&log_path).unwrap_or_default()
+}
+
+/// Read output log for a host (cleaned for display)
+fn read_output(output_dir: &Path, host: &str) -> String {
+    clean_terminal_output(&read_raw_output(output_dir, host))
 }
 
 /// Clean terminal output by processing carriage returns and stripping control chars
@@ -589,5 +661,28 @@ mod tests {
 
         let consensus = compute_consensus(&hosts, &outputs);
         assert!(consensus.is_empty());
+    }
+
+    #[test]
+    fn test_detect_input_prompt_password() {
+        assert!(detect_input_prompt("Connecting...\nPassword:"));
+        assert!(detect_input_prompt("Enter your password:"));
+        assert!(detect_input_prompt("SSH passphrase for key:"));
+    }
+
+    #[test]
+    fn test_detect_input_prompt_confirmation() {
+        assert!(detect_input_prompt("Proceed with installation? [y/n]"));
+        assert!(detect_input_prompt("Continue? [Y/n]"));
+        assert!(detect_input_prompt("Are you sure (yes/no)?"));
+        assert!(detect_input_prompt("Do you want to continue?"));
+    }
+
+    #[test]
+    fn test_detect_input_prompt_negative() {
+        // Regular output shouldn't trigger
+        assert!(!detect_input_prompt("Installing packages..."));
+        assert!(!detect_input_prompt("Downloading file 1 of 10"));
+        assert!(!detect_input_prompt("Build completed successfully"));
     }
 }

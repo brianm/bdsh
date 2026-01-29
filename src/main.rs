@@ -122,7 +122,8 @@ fn run_command(
     command: &[String],
 ) -> Result<()> {
     // Resolve hosts from source with optional filter
-    let hosts = hosts::resolve_hosts(source, filter)?;
+    let mut hosts = hosts::resolve_hosts(source, filter)?;
+    hosts.sort(); // Sort for consistent window numbering with watch view
 
     // Create output directory
     let output_dir = match output_dir {
@@ -199,12 +200,13 @@ fn run_command(
             ])?;
         }
 
-        // Set up pipe-pane to capture output (flush after each line for real-time updates)
+        // Set up pipe-pane to capture output
+        // Use dd with no buffering to capture partial lines (like prompts without newlines)
         tmux(socket_str, &[
             "pipe-pane",
             "-t",
             &format!("{}:{}", session_name, window_index),
-            &format!("awk '{{print; fflush()}}' > {}", host_log.display()),
+            &format!("dd bs=1 of={} 2>/dev/null", host_log.display()),
         ])?;
     }
 
