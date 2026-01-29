@@ -17,6 +17,17 @@ cargo run             # Run the binary
 - Use `/yatl` for planning and tracking work
 - Do not check in `.claude/` directory
 
+## Man Page
+
+The man page (`doc/bdsh.1`) is manually generated and checked into the repository.
+
+To regenerate after changing CLI options or `doc/bdsh-extra.md`:
+```bash
+cargo test --test generate_man -- --ignored --nocapture
+```
+
+The test suite includes a check that ensures the man page stays up to date with the CLI definition.
+
 ## Project Overview
 
 bdsh (Better Distributed Shell) is a tool for running commands on multiple hosts simultaneously via SSH, with a consensus view of output and interactive capabilities. Status: early development.

@@ -99,14 +99,14 @@ Releases are automated via [cargo-dist](https://github.com/axodotdev/cargo-dist)
 # Bump version, publish to crates.io, create tag
 cargo release patch --execute --no-confirm  # or minor/major
 
-# Push tag to trigger release workflow
-git push origin --tags
+# Push tag to trigger release workflow (using jj/git)
+jj git push --all  # or: git push origin --tags
 ```
 
 This will:
 1. Publish to [crates.io](https://crates.io/crates/bdsh)
 2. Build binaries for macOS (arm64, x86_64) and Linux (arm64, x86_64)
-3. Create a GitHub release with downloadable archives
+3. Create a GitHub release with downloadable archives (including man page)
 4. Update the Homebrew formula at `brianm/homebrew-tools`
 
 ## Alternatives
