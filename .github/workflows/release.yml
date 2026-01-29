@@ -308,7 +308,8 @@ jobs:
         run: |
           if [ -f "Formula/bdsh.rb" ]; then
             # Add man page installation to bdsh formula
-            sed -i 's/def install/def install\n    man1.install "bdsh.1" if File.exist?("bdsh.1")/' "Formula/bdsh.rb"
+            # The man page is checked in at doc/bdsh.1 and included in release archives via dist-workspace.toml
+            sed -i 's/def install/def install\n    man1.install "doc\/bdsh.1"/' "Formula/bdsh.rb"
           fi
       - name: Commit formula files
         run: |

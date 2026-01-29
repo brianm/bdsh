@@ -20,9 +20,6 @@ tempfile = "3"
 [dev-dependencies]
 assert_cmd = "2.1.2"
 predicates = "3.1.3"
-
-[build-dependencies]
-clap = { version = "4.5.13", features = ["derive"] }
 clap_mangen = "0.2"
 mandown = "1"
 
