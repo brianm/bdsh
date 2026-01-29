@@ -5,8 +5,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod cli;
 mod hosts;
 mod watch;
+
+pub use cli::Cli;
 
 /// Status of a command running on a host
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,38 +38,6 @@ impl Status {
             Self::Failed => "failed",
         }
     }
-}
-
-#[derive(Parser, Debug)]
-#[command(name = "bdsh", about = "Better Distributed Shell", version)]
-struct Cli {
-    /// Watch an output directory instead of running commands
-    #[arg(long, conflicts_with_all = ["host_source", "tag_filter", "command"])]
-    watch: Option<PathBuf>,
-
-    /// Host source: @file, @"cmd", inline (h1,h2), or omit for hosts file
-    #[arg()]
-    host_source: Option<String>,
-
-    /// Tag filter: :tag, :t1:t2 (AND), :t1,:t2 (OR)
-    #[arg()]
-    tag_filter: Option<String>,
-
-    /// Output directory (default: temp)
-    #[arg(short, long)]
-    output_dir: Option<PathBuf>,
-
-    /// Keep output directory on exit
-    #[arg(short, long)]
-    keep: bool,
-
-    /// Disable watch window (window 0 with consensus view)
-    #[arg(long)]
-    no_watch: bool,
-
-    /// Command to run on all hosts
-    #[arg(last = true)]
-    command: Vec<String>,
 }
 
 fn main() -> Result<()> {
