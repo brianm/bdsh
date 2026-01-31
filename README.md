@@ -71,6 +71,7 @@ The consensus view shows output that's identical across hosts normally, and high
 ### Status Indicators
 
 - `⠋` (spinner) - running
+- `⌨` (blinking) - waiting for input
 - `✓` - success
 - `✗` - failed
 
