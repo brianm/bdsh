@@ -19,14 +19,7 @@ cargo run             # Run the binary
 
 ## Man Page
 
-The man page (`doc/bdsh.1`) is manually generated and checked into the repository.
-
-To regenerate after changing CLI options or `doc/bdsh-extra.md`:
-```bash
-cargo test --test generate_man -- --ignored --nocapture
-```
-
-The test suite includes a check that ensures the man page stays up to date with the CLI definition.
+The man page is generated at build time from `src/cli.rs` and `doc/bdsh-extra.md`. Find it at `target/*/build/bdsh-*/out/bdsh.1` after building.
 
 ## Project Overview
 
@@ -43,3 +36,30 @@ The tool uses a tmux-based architecture with direct command execution:
 ### Key Files
 
 - `src/main.rs` - Entry point, CLI handling, tmux session management
+
+## Releasing
+
+```bash
+# Make a release (bumps version, tags, pushes to crates.io)
+cargo release patch --execute  # or minor/major
+
+# Tag push triggers GitHub Actions which:
+# 1. Builds binaries for 4 platforms
+# 2. Creates GitHub Release with tarballs
+# 3. Updates Homebrew tap
+# 4. Updates AUR package
+```
+
+### Local Build/Test
+
+```bash
+# Build release tarball for current platform
+make dist
+
+# Generate packaging files (after tarballs exist in dist/out/)
+make formula    # Homebrew formula
+make pkgbuild   # AUR PKGBUILD
+
+# Test AUR package on Arch Linux
+cd dist/out && makepkg -si
+```
