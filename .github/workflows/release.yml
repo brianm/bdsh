@@ -107,9 +107,10 @@ jobs:
         run: |
           git clone ssh://aur@aur.archlinux.org/bdsh.git aur-repo
           cp dist/out/PKGBUILD aur-repo/
-          # Generate .SRCINFO using Arch container (mount only the PKGBUILD, not .git)
-          docker run --rm -v "$PWD/aur-repo/PKGBUILD:/PKGBUILD:ro" archlinux:base-devel bash -c "
-            cd / && makepkg --printsrcinfo -p /PKGBUILD
+          # Generate .SRCINFO using Arch container as non-root user
+          docker run --rm -v "$PWD/aur-repo/PKGBUILD:/tmp/PKGBUILD:ro" archlinux:base-devel bash -c "
+            useradd -m builder
+            su builder -c 'makepkg --printsrcinfo -p /tmp/PKGBUILD'
           " > aur-repo/.SRCINFO
           cd aur-repo
           git config user.name "Brian McCallister"
