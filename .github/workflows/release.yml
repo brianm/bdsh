@@ -91,30 +91,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Generate PKGBUILD
-        run: make pkgbuild
-      - name: Setup SSH
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          cat >> ~/.ssh/config <<EOF
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur
-            User aur
-          EOF
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-      - name: Push to AUR
-        run: |
-          git clone ssh://aur@aur.archlinux.org/bdsh.git aur-repo
-          cp dist/out/PKGBUILD aur-repo/
-          # Generate .SRCINFO using Arch container as non-root user
-          docker run --rm -v "$PWD/aur-repo/PKGBUILD:/tmp/PKGBUILD:ro" archlinux:base-devel bash -c "
-            useradd -m builder
-            su builder -c 'makepkg --printsrcinfo -p /tmp/PKGBUILD'
-          " > aur-repo/.SRCINFO
-          cd aur-repo
-          git config user.name "Brian McCallister"
-          git config user.email "brianm@apache.org"
-          git add PKGBUILD .SRCINFO
-          git diff --cached --quiet || git commit -m "Update to ${{ needs.release.outputs.version }}"
-          git push
+          mkdir -p dist/out
+          make pkgbuild
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: bdsh
+          pkgbuild: dist/out/PKGBUILD
+          commit_username: Brian McCallister
+          commit_email: brianm@apache.org
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ needs.release.outputs.version }}"
