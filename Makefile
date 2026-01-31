@@ -1,9 +1,17 @@
 VERSION := $(shell grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
-TARGET  ?= $(shell rustc -vV | grep host | cut -d' ' -f2)
+HOST    := $(shell rustc -vV | grep host | cut -d' ' -f2)
+TARGET  ?= $(HOST)
 
 DIST_DIR     := dist/out
 TARBALL_NAME := bdsh-$(VERSION)-$(TARGET)
 TARBALL      := $(DIST_DIR)/$(TARBALL_NAME).tar.gz
+
+# Binary location depends on whether we're cross-compiling
+ifeq ($(TARGET),$(HOST))
+  RELEASE_DIR := target/release
+else
+  RELEASE_DIR := target/$(TARGET)/release
+endif
 
 # Development
 .PHONY: build test release clean
@@ -15,7 +23,11 @@ test:
 	cargo test
 
 release:
+ifeq ($(TARGET),$(HOST))
 	cargo build --release
+else
+	cargo build --release --target $(TARGET)
+endif
 
 clean:
 	cargo clean
@@ -28,7 +40,7 @@ clean:
 
 dist: release
 	@mkdir -p $(DIST_DIR)/$(TARBALL_NAME)
-	cp target/release/bdsh $(DIST_DIR)/$(TARBALL_NAME)/
+	cp $(RELEASE_DIR)/bdsh $(DIST_DIR)/$(TARBALL_NAME)/
 	cp $$(find target -name 'bdsh.1' -path '*/build/*/out/*' | head -1) $(DIST_DIR)/$(TARBALL_NAME)/
 	cp LICENSE $(DIST_DIR)/$(TARBALL_NAME)/
 	cd $(DIST_DIR) && tar -czvf $(TARBALL_NAME).tar.gz $(TARBALL_NAME)
