@@ -1,6 +1,6 @@
 # EXAMPLES
 
-Run 'uptime' on hosts from config file:
+Run 'uptime' on hosts from config file at `~/.config/bdsh/hosts`:
 
     bdsh -- uptime
 

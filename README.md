@@ -2,6 +2,8 @@
 
 Better Distributed Shell - run commands on multiple hosts with a consensus view of the output.
 
+![Demo](demo/cowsay.gif)
+
 ## Usage
 
 ```bash
@@ -104,6 +106,10 @@ cargo test
 ```
 
 The test suite includes a check that ensures the man page stays synchronized with the CLI definition in `src/cli.rs`.
+
+### Documentation
+
+See [Additional Documentation](doc/bdsh-extra.md) for more details on configuration and advanced usage.
 
 ### Making a Release
 
