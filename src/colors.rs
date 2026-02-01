@@ -16,6 +16,12 @@ impl ColorScheme {
         Self { enabled }
     }
 
+    /// Create a new color scheme with explicit enabled state (for testing)
+    #[cfg(test)]
+    fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+
     /// Get color for running status
     pub fn running(&self) -> Color {
         if self.enabled {
@@ -157,57 +163,31 @@ mod tests {
 
     #[test]
     fn test_colors_enabled() {
-        // Temporarily unset NO_COLOR
-        let original = env::var("NO_COLOR");
-        env::remove_var("NO_COLOR");
-
-        let scheme = ColorScheme::from_env();
+        let scheme = ColorScheme::new(true);
         assert!(matches!(scheme.running(), Color::Yellow));
         assert!(matches!(scheme.success(), Color::Green));
         assert!(matches!(scheme.failed(), Color::Red));
-
-        // Restore original value
-        if let Ok(val) = original {
-            env::set_var("NO_COLOR", val);
-        }
     }
 
     #[test]
     fn test_ansi_colors_enabled() {
-        let original = env::var("NO_COLOR");
-        env::remove_var("NO_COLOR");
-
-        let scheme = ColorScheme::from_env();
+        let scheme = ColorScheme::new(true);
         assert_eq!(scheme.ansi_yellow("test"), "\x1b[33mtest\x1b[0m");
         assert_eq!(scheme.ansi_green("test"), "\x1b[32mtest\x1b[0m");
-
-        if let Ok(val) = original {
-            env::set_var("NO_COLOR", val);
-        }
     }
 
     #[test]
     fn test_colors_disabled() {
-        // Set NO_COLOR
-        env::set_var("NO_COLOR", "1");
-
-        let scheme = ColorScheme::from_env();
+        let scheme = ColorScheme::new(false);
         assert!(matches!(scheme.running(), Color::Reset));
         assert!(matches!(scheme.success(), Color::Reset));
         assert!(matches!(scheme.failed(), Color::Reset));
-
-        // Clean up
-        env::remove_var("NO_COLOR");
     }
 
     #[test]
     fn test_ansi_colors_disabled() {
-        env::set_var("NO_COLOR", "1");
-
-        let scheme = ColorScheme::from_env();
+        let scheme = ColorScheme::new(false);
         assert_eq!(scheme.ansi_yellow("test"), "test");
         assert_eq!(scheme.ansi_green("test"), "test");
-
-        env::remove_var("NO_COLOR");
     }
 }
