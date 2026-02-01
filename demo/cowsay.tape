@@ -60,9 +60,9 @@ Output cowsay.gif
 Require bdsh
 
 Set Shell "bash"
-Set FontSize 16
-Set Width 850
-Set Height 600
+Set FontSize 14
+Set Width 650
+Set Height 400
 
 Type "bdsh freki.home,badb.home,hati.brianm.dev -- cowsay '$(hostname)'" Sleep 500ms  Enter
 Sleep 3s
