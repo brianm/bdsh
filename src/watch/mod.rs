@@ -52,6 +52,7 @@ const INPUT_PROMPT_PATTERNS: &[&str] = &[
     ": $",
     "? $",
     "> ",
+    "? ",
     "read>",
 ];
 
