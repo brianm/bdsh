@@ -55,25 +55,40 @@
 #   Hide                            Hide the subsequent commands from the output
 #   Show                            Show the subsequent commands in the output
 
-Output cowsay.gif
+Output input.gif
 
 Require bdsh
 
 Set Shell "bash"
-Set FontSize 16
-Set Width 850
-Set Height 600
+Set FontSize 14
+Set Width 650
+Set Height 400
 
-Type "bdsh freki.home,badb.home,hati.brianm.dev -- cowsay '$(hostname)'" Sleep 500ms  Enter
+Type "bdsh badb,freki,hati.brianm.dev -- 'touch ./gloop && rm -i ./gloop'" Sleep 500ms  Enter
 Sleep 3s
-Up 7
+
+Ctrl+b
+Type '1'
 Sleep 1s
-Right
-Sleep 2s
-Down
+Type 'y'
+Sleep 0.5s
+Enter
+Sleep 2
+
+Ctrl+b
+Type '2'
 Sleep 1s
-Left
+Type 'y'
+Sleep 0.5s
+Enter
+Sleep 2
+
+Ctrl+b
+Type '3'
 Sleep 1s
-Left
-Sleep 2s
+Type 'y'
+Sleep 0.5s
+Enter
+Sleep 2
+
 Type 'q'
