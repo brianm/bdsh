@@ -1,6 +1,6 @@
 [package]
 name = "bdsh"
-version = "0.2.15"
+version = "0.2.16"
 edition = "2021"
 description = "Run commands on multiple hosts simultaneously via SSH with consensus output view"
 license = "Apache-2.0"
