@@ -49,11 +49,15 @@ const INPUT_PROMPT_PATTERNS: &[&str] = &[
     "enter to continue",
     "press enter",
     "press any key",
+    "--more--",
+    "--More--",
+    "(END)",
     ": $",
     "? $",
     "> ",
     "? ",
     "read>",
+    ":",
 ];
 
 
