@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 pub(super) fn format_gutter(hosts: &[String], expanded: bool) -> String {
     match hosts.len() {
         1 => hosts[0].clone(),
-        n if expanded => hosts.join(","),
+        _ if expanded => hosts.join(","),
         n => format!("[{}]", n),
     }
 }
