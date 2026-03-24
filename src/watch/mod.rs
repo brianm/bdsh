@@ -35,6 +35,7 @@ const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦
 const SPINNER_INTERVAL_MS: u64 = 80;
 
 /// Patterns that suggest a process is waiting for user input
+/// Patterns that match anywhere in the tail of the output
 const INPUT_PROMPT_PATTERNS: &[&str] = &[
     "password:",
     "passphrase",
@@ -52,16 +53,17 @@ const INPUT_PROMPT_PATTERNS: &[&str] = &[
     "--more--",
     "--More--",
     "(END)",
-    ": $",
-    "? $",
-    "> ",
-    "? ",
     "read>",
-    ":",
 ];
 
-
-
+/// Patterns that only match at the very end of the tail (prompt characters).
+/// Checked against the tail after stripping trailing whitespace/newlines.
+const INPUT_PROMPT_SUFFIX_PATTERNS: &[&str] = &[
+    ":",
+    "> ",
+    "? ",
+    "$ ",
+];
 
 
 /// Detect if output suggests the process is waiting for user input
@@ -78,10 +80,21 @@ fn detect_input_prompt(output: &str) -> bool {
         .collect();
     let tail_lower = tail.to_lowercase();
 
-
-    INPUT_PROMPT_PATTERNS
+    // Specific multi-char phrases are unambiguous — check anywhere in the tail
+    if INPUT_PROMPT_PATTERNS
         .iter()
         .any(|pattern| tail_lower.contains(&pattern.to_lowercase()))
+    {
+        return true;
+    }
+
+    // Short prompt characters are only meaningful at the end of output.
+    // Strip trailing whitespace/newlines before checking, since prompts
+    // often lack a trailing newline but may have trailing spaces.
+    let tail_trimmed = tail_lower.trim_end_matches(['\n', '\r', ' ']);
+    INPUT_PROMPT_SUFFIX_PATTERNS
+        .iter()
+        .any(|pattern| tail_trimmed.ends_with(&pattern.to_lowercase()))
 }
 
 /// WatchApp - coordinator for the watch mode TUI
@@ -690,5 +703,20 @@ mod tests {
         assert!(!detect_input_prompt("Installing packages..."));
         assert!(!detect_input_prompt("Downloading file 1 of 10"));
         assert!(!detect_input_prompt("Build completed successfully"));
+        // Progress indicators with % should not trigger
+        assert!(!detect_input_prompt("Downloading: 50%\n"));
+        assert!(!detect_input_prompt("Progress: 100%\n"));
+        assert!(!detect_input_prompt("[=====>   ] 75%\n"));
+        // Colons in regular output should not trigger
+        assert!(!detect_input_prompt("Step 1: build\nStep 2: test\n"));
+        assert!(!detect_input_prompt("2024-01-01T12:00:00Z something happened\n"));
+    }
+
+    #[test]
+    fn test_detect_input_prompt_pager() {
+        // less/more pager prompts at end of output should trigger
+        assert!(detect_input_prompt("some output\n:"));
+        assert!(detect_input_prompt("some output\n--More--"));
+        assert!(detect_input_prompt("some output\n(END)"));
     }
 }
