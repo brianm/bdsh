@@ -1,3 +1,4 @@
+use super::WINDOW_BASE;
 use crate::colors::ColorScheme;
 use crate::Status;
 use ratatui::{
@@ -20,6 +21,8 @@ pub(crate) struct StatusBar<'a> {
     pub(crate) tail_mode: bool,
     pub(crate) keep_output: bool,
     pub(crate) colors: &'a ColorScheme,
+    /// Label shown in the title, e.g. "Consensus View" or "Log View".
+    pub(crate) view_label: &'a str,
 }
 
 impl<'a> StatusBar<'a> {
@@ -42,6 +45,7 @@ impl<'a> StatusBar<'a> {
             tail_mode,
             keep_output,
             colors,
+            view_label: "Consensus View",
         }
     }
 }
@@ -60,15 +64,19 @@ impl Widget for StatusBar<'_> {
                 let status = self.statuses.get(host).copied().unwrap_or(Status::Pending);
                 let is_waiting = self.waiting_for_input.get(host).copied().unwrap_or(false);
 
+                let window_num = idx + WINDOW_BASE;
                 let mut spans = vec![
+                    Span::styled(
+                        format!("[{}]", window_num),
+                        Style::default().fg(self.colors.dark_gray()),
+                    ),
                     Span::raw(host.clone()),
                     Span::raw(":"),
                 ];
 
-                // If waiting for input, show pulsing keyboard indicator instead of spinner
-                // Window number is idx + 1 (window 0 is watch)
+                // If waiting for input, show pulsing keyboard indicator instead of spinner.
+                // window_num is the tmux window number (window 0 is the watch view).
                 if is_waiting {
-                    let window_num = idx + 1;
                     let indicator = format!("⌨[{}]", window_num);
                     // Pulse between bright and dim magenta
                     let color = if show_input_indicator {
@@ -95,7 +103,8 @@ impl Widget for StatusBar<'_> {
         let tail_indicator = if self.tail_mode { " [TAIL]" } else { "" };
         let keep_indicator = if self.keep_output { " [KEEP]" } else { "" };
         let title = format!(
-            "Consensus View ({} hosts){}{}",
+            "{} ({} hosts){}{}",
+            self.view_label,
             self.hosts.len(),
             tail_indicator,
             keep_indicator

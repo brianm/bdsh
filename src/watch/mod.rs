@@ -9,10 +9,10 @@ use consensus::{
     clean_terminal_output, compute_consensus, format_gutter, max_gutter_width, ConsensusLine,
     ConsensusView, ConsensusViewWidget,
 };
-use help_bar::HelpBar;
+use help_bar::{HelpBar, HelpContext};
 use status_bar::StatusBar;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     tty::IsTty,
     ExecutableCommand,
@@ -20,7 +20,7 @@ use crossterm::{
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Spacing},
+    layout::{Constraint, Direction, Layout, Rect, Spacing},
     Frame, Terminal,
 };
 use std::collections::HashMap;
@@ -97,6 +97,35 @@ fn detect_input_prompt(output: &str) -> bool {
         .any(|pattern| tail_trimmed.ends_with(&pattern.to_lowercase()))
 }
 
+/// The number shown for `hosts[0]` in the status bar. 1-based so the index
+/// matches the tmux window number (window 0 is the watch view itself).
+pub(super) const WINDOW_BASE: usize = 1;
+
+/// Map a user-typed window number to a host. Returns `None` for `0` or any
+/// number outside the host list. Shared by the status-bar prefix and the
+/// log-view selection so the two can't drift apart.
+fn host_for_window_number(hosts: &[String], typed: usize) -> Option<&str> {
+    typed
+        .checked_sub(WINDOW_BASE)
+        .and_then(|i| hosts.get(i))
+        .map(String::as_str)
+}
+
+/// Which view is active in the main content area.
+enum ViewMode {
+    /// Default unified consensus/diff view.
+    Consensus,
+    /// User is typing a host index number to open its log.
+    NumberEntry { buffer: String },
+    /// Full-screen scrollable log of a single host.
+    /// `tail` keeps the view pinned to the bottom as new output arrives.
+    Log {
+        host: String,
+        scroll: usize,
+        tail: bool,
+    },
+}
+
 /// WatchApp - coordinator for the watch mode TUI
 struct WatchApp {
     output_dir: PathBuf,
@@ -118,6 +147,8 @@ struct WatchApp {
     spinner_last_update: Instant,
     /// Tail mode - auto-scroll to end
     tail_mode: bool,
+    /// Which view is active in the main content area
+    mode: ViewMode,
 }
 
 impl WatchApp {
@@ -136,7 +167,138 @@ impl WatchApp {
             spinner_frame: 0,
             spinner_last_update: Instant::now(),
             tail_mode: true,
+            mode: ViewMode::Consensus,
         }
+    }
+
+    /// Enter host-index entry mode (triggered by `v`). No-op if there are no hosts.
+    fn start_number_entry(&mut self) {
+        if !self.hosts.is_empty() {
+            self.mode = ViewMode::NumberEntry {
+                buffer: String::new(),
+            };
+        }
+    }
+
+    /// Resolve a key press while in NumberEntry mode into the next view mode.
+    /// Pure with respect to terminal/filesystem so it can be unit-tested.
+    fn handle_number_entry_key(&self, buffer: &str, key: KeyCode) -> ViewMode {
+        match key {
+            KeyCode::Char(c) if c.is_ascii_digit() => ViewMode::NumberEntry {
+                buffer: format!("{}{}", buffer, c),
+            },
+            KeyCode::Backspace => {
+                let mut buffer = buffer.to_string();
+                buffer.pop();
+                ViewMode::NumberEntry { buffer }
+            }
+            KeyCode::Enter => match buffer.parse::<usize>() {
+                Ok(n) => match host_for_window_number(&self.hosts, n) {
+                    Some(host) => ViewMode::Log {
+                        host: host.to_string(),
+                        scroll: 0,
+                        tail: true,
+                    },
+                    None => ViewMode::Consensus,
+                },
+                Err(_) => ViewMode::Consensus,
+            },
+            KeyCode::Esc => ViewMode::Consensus,
+            // Ignore any other key: stay in entry mode with the buffer unchanged.
+            _ => ViewMode::NumberEntry {
+                buffer: buffer.to_string(),
+            },
+        }
+    }
+
+    /// Dispatch a key press based on the active view mode. Returns `true` if the
+    /// app should quit. Kept free of terminal/event-loop concerns so it can be
+    /// driven directly from tests.
+    fn handle_key(&mut self, key: KeyEvent) -> bool {
+        // Ctrl-C / Ctrl-D quit from any mode.
+        if matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            return true;
+        }
+
+        if matches!(self.mode, ViewMode::NumberEntry { .. }) {
+            // Resolve the keypress against the current buffer.
+            let buffer = match &self.mode {
+                ViewMode::NumberEntry { buffer } => buffer.clone(),
+                _ => unreachable!(),
+            };
+            self.mode = self.handle_number_entry_key(&buffer, key.code);
+        } else if matches!(self.mode, ViewMode::Log { .. }) {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), KeyModifiers::NONE)
+                | (KeyCode::Char('Q'), KeyModifiers::SHIFT)
+                | (KeyCode::Esc, _) => self.mode = ViewMode::Consensus,
+                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                    if let ViewMode::Log { scroll, tail, .. } = &mut self.mode {
+                        // Manual scroll up stops following the tail.
+                        *tail = false;
+                        *scroll = scroll.saturating_sub(1);
+                    }
+                }
+                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                    if let ViewMode::Log { scroll, .. } = &mut self.mode {
+                        *scroll += 1;
+                    }
+                }
+                (KeyCode::Home, _) | (KeyCode::Char('g'), KeyModifiers::NONE) => {
+                    if let ViewMode::Log { scroll, tail, .. } = &mut self.mode {
+                        *tail = false;
+                        *scroll = 0;
+                    }
+                }
+                (KeyCode::End, _) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                    if let ViewMode::Log { tail, .. } = &mut self.mode {
+                        // Jump to bottom and resume following.
+                        *tail = true;
+                    }
+                }
+                (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                    if let ViewMode::Log { tail, .. } = &mut self.mode {
+                        *tail = !*tail;
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            // Consensus mode
+            match (key.code, key.modifiers) {
+                // Quit commands
+                (KeyCode::Char('q'), KeyModifiers::NONE)
+                | (KeyCode::Char('Q'), KeyModifiers::SHIFT)
+                | (KeyCode::Esc, _) => return true,
+
+                // Navigation
+                (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => self.scroll_up(),
+                (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => self.scroll_down(),
+
+                // Expand/collapse with arrow keys (hierarchical)
+                (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
+                    self.expand_selected()
+                }
+                (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
+                    self.collapse_selected()
+                }
+
+                // Actions
+                (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => self.toggle_expand(),
+                (KeyCode::Tab, _) => self.jump_to_next_diff(),
+                (KeyCode::Char('e'), KeyModifiers::NONE) => self.expand_all(),
+                (KeyCode::Char('c'), KeyModifiers::NONE) => self.collapse_all(),
+                (KeyCode::Char('K'), KeyModifiers::SHIFT) => self.toggle_keep(),
+                (KeyCode::Char('t'), KeyModifiers::NONE) => self.toggle_tail(),
+                (KeyCode::Char('v'), KeyModifiers::NONE) => self.start_number_entry(),
+
+                _ => {}
+            }
+        }
+
+        false
     }
 
     fn toggle_tail(&mut self) {
@@ -482,41 +644,8 @@ fn run_tui(
         // Handle events with short timeout
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match (key.code, key.modifiers) {
-                        // Quit commands
-                        (KeyCode::Char('q'), KeyModifiers::NONE)
-                        | (KeyCode::Char('Q'), KeyModifiers::SHIFT)
-                        | (KeyCode::Esc, _) => break,
-                        (KeyCode::Char('d'), m) if m.contains(KeyModifiers::CONTROL) => break,
-                        (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => break,
-
-                        // Navigation
-                        (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                            state.scroll_up()
-                        }
-                        (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                            state.scroll_down()
-                        }
-
-                        // Expand/collapse with arrow keys (hierarchical)
-                        (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
-                            state.expand_selected()
-                        }
-                        (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
-                            state.collapse_selected()
-                        }
-
-                        // Actions
-                        (KeyCode::Enter, _) | (KeyCode::Char(' '), _) => state.toggle_expand(),
-                        (KeyCode::Tab, _) => state.jump_to_next_diff(),
-                        (KeyCode::Char('e'), KeyModifiers::NONE) => state.expand_all(),
-                        (KeyCode::Char('c'), KeyModifiers::NONE) => state.collapse_all(),
-                        (KeyCode::Char('K'), KeyModifiers::SHIFT) => state.toggle_keep(),
-                        (KeyCode::Char('t'), KeyModifiers::NONE) => state.toggle_tail(),
-
-                        _ => {}
-                    }
+                if key.kind == KeyEventKind::Press && state.handle_key(key) {
+                    break;
                 }
             }
         }
@@ -524,7 +653,7 @@ fn run_tui(
         // Always refresh - reading small files is fast, and this avoids
         // any delays from file watcher event propagation
         let _ = state.refresh();
-        if state.tail_mode {
+        if matches!(state.mode, ViewMode::Consensus) && state.tail_mode {
             state.consensus_view.scroll_to_end();
         }
     }
@@ -543,7 +672,7 @@ fn render_ui(f: &mut Frame, state: &mut WatchApp, spinner: char) {
         .spacing(Spacing::Overlap(1))
         .split(f.area());
 
-    let status_bar = StatusBar::new(
+    let mut status_bar = StatusBar::new(
         &state.hosts,
         &state.statuses,
         &state.waiting_for_input,
@@ -553,11 +682,74 @@ fn render_ui(f: &mut Frame, state: &mut WatchApp, spinner: char) {
         state.keep_output,
         &state.color_scheme,
     );
+    if matches!(state.mode, ViewMode::Log { .. }) {
+        status_bar.view_label = "Log View";
+    }
     f.render_widget(status_bar, chunks[0]);
 
-    f.render_stateful_widget(ConsensusViewWidget::new(&state.color_scheme), chunks[1], &mut state.consensus_view);
+    // Main content + help depend on the active mode. The status bar above
+    // renders in every mode so the index numbers stay visible.
+    match &mut state.mode {
+        ViewMode::Consensus => {
+            f.render_stateful_widget(
+                ConsensusViewWidget::new(&state.color_scheme),
+                chunks[1],
+                &mut state.consensus_view,
+            );
+            f.render_widget(HelpBar::new(HelpContext::Consensus), chunks[2]);
+        }
+        ViewMode::NumberEntry { buffer } => {
+            // Keep the consensus view visible underneath for context.
+            f.render_stateful_widget(
+                ConsensusViewWidget::new(&state.color_scheme),
+                chunks[1],
+                &mut state.consensus_view,
+            );
+            f.render_widget(HelpBar::new(HelpContext::NumberEntry(buffer)), chunks[2]);
+        }
+        ViewMode::Log { host, scroll, tail } => {
+            render_log_view(f, chunks[1], host, scroll, *tail, &state.output_dir, &state.hosts);
+            f.render_widget(HelpBar::new(HelpContext::Log { tail: *tail }), chunks[2]);
+        }
+    }
+}
 
-    f.render_widget(HelpBar, chunks[2]);
+/// Render a single host's full (cleaned) log, scrollable. Re-reads the log each
+/// frame so a still-running host's output updates live. When `tail` is set, the
+/// view is pinned to the bottom; `scroll` is synced to the bottom so toggling
+/// tail off leaves the view where it is. Otherwise `scroll` is clamped to range.
+fn render_log_view(
+    f: &mut Frame,
+    area: Rect,
+    host: &str,
+    scroll: &mut usize,
+    tail: bool,
+    output_dir: &Path,
+    hosts: &[String],
+) {
+    let text = if hosts.iter().any(|h| h == host) {
+        read_output(output_dir, host)
+    } else {
+        "(host no longer present)".to_string()
+    };
+
+    // Viewport = area minus borders, matching ConsensusViewWidget's inner-height.
+    let inner_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = text.lines().count().saturating_sub(inner_height);
+    // Tail pins to the bottom; otherwise just keep scroll within range.
+    if tail || *scroll > max_scroll {
+        *scroll = max_scroll;
+    }
+
+    let paragraph = ratatui::widgets::Paragraph::new(text)
+        .block(
+            ratatui::widgets::Block::default()
+                .borders(ratatui::widgets::Borders::ALL)
+                .title(format!("Log: {} (q/Esc to return)", host))
+                .merge_borders(ratatui::symbols::merge::MergeStrategy::Exact),
+        )
+        .scroll((*scroll as u16, 0));
+    f.render_widget(paragraph, area);
 }
 
 
@@ -614,6 +806,131 @@ fn read_status(output_dir: &Path, host: &str) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
+    use tempfile::tempdir;
+
+    /// Create a stub host directory with output and status, the same layout the
+    /// tmux sessions write — so the TUI can be driven without any real SSH.
+    fn stub_host(dir: &Path, host: &str, out: &str, status: &str) {
+        let host_dir = dir.join(host);
+        fs::create_dir_all(&host_dir).unwrap();
+        fs::write(host_dir.join("out.log"), out).unwrap();
+        fs::write(host_dir.join("status"), status).unwrap();
+    }
+
+    /// Render the app into an in-memory TestBackend and flatten the buffer to a
+    /// single string for substring assertions.
+    fn render_to_string(state: &mut WatchApp, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|f| render_ui(f, state, '*')).unwrap();
+        let buf = terminal.backend().buffer();
+        let area = buf.area;
+        let mut out = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                if let Some(cell) = buf.cell((x, y)) {
+                    out.push_str(cell.symbol());
+                }
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    fn press(state: &mut WatchApp, code: KeyCode) -> bool {
+        state.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn test_status_bar_shows_window_index_prefix() {
+        let dir = tempdir().unwrap();
+        stub_host(dir.path(), "alpha", "out\n", "success");
+        stub_host(dir.path(), "beta", "out\n", "running");
+
+        let mut state = WatchApp::new(dir.path().to_path_buf());
+        state.refresh().unwrap();
+        let screen = render_to_string(&mut state, 80, 24);
+
+        // Hosts are sorted: alpha -> [1], beta -> [2] (matches tmux window numbers).
+        assert!(screen.contains("[1]alpha"), "missing alpha prefix:\n{screen}");
+        assert!(screen.contains("[2]beta"), "missing beta prefix:\n{screen}");
+    }
+
+    #[test]
+    fn test_v_opens_selected_host_log() {
+        let dir = tempdir().unwrap();
+        stub_host(dir.path(), "alpha", "ALPHA_ONLY_LINE\n", "success");
+        stub_host(dir.path(), "beta", "BETA_ONLY_LINE\n", "success");
+
+        let mut state = WatchApp::new(dir.path().to_path_buf());
+        state.refresh().unwrap();
+
+        // v -> number-entry, type "2" (beta), Enter -> log view for beta.
+        assert!(!press(&mut state, KeyCode::Char('v')));
+        assert!(matches!(state.mode, ViewMode::NumberEntry { .. }));
+        assert!(!press(&mut state, KeyCode::Char('2')));
+        assert!(!press(&mut state, KeyCode::Enter));
+        assert!(
+            matches!(&state.mode, ViewMode::Log { host, tail, .. } if host == "beta" && *tail),
+            "expected tailing log view for beta, got {:?}",
+            mode_name(&state.mode)
+        );
+
+        let screen = render_to_string(&mut state, 80, 24);
+        assert!(screen.contains("Log: beta"), "missing log title:\n{screen}");
+        assert!(screen.contains("BETA_ONLY_LINE"), "missing beta log:\n{screen}");
+        // The other host's output must not leak into beta's log view.
+        assert!(!screen.contains("ALPHA_ONLY_LINE"), "alpha leaked:\n{screen}");
+        // The status bar reflects the active mode.
+        assert!(screen.contains("Log View"), "status bar not relabeled:\n{screen}");
+        assert!(!screen.contains("Consensus View"), "stale consensus label:\n{screen}");
+    }
+
+    #[test]
+    fn test_log_view_tail_toggle_and_scroll() {
+        let dir = tempdir().unwrap();
+        stub_host(dir.path(), "alpha", "l1\nl2\nl3\n", "success");
+
+        let mut state = WatchApp::new(dir.path().to_path_buf());
+        state.refresh().unwrap();
+
+        // The status bar always shows its own [TAIL] (consensus tail_mode), so
+        // count occurrences: the log help bar adds a second one while tailing.
+        let tail_count = |s: &str| s.matches("[TAIL]").count();
+
+        // Open alpha's log (window 1). Tail is on by default.
+        press(&mut state, KeyCode::Char('v'));
+        press(&mut state, KeyCode::Char('1'));
+        press(&mut state, KeyCode::Enter);
+        assert!(matches!(state.mode, ViewMode::Log { tail: true, .. }));
+        assert_eq!(tail_count(&render_to_string(&mut state, 80, 24)), 2);
+
+        // `t` toggles tail off — the help bar's indicator goes away.
+        press(&mut state, KeyCode::Char('t'));
+        assert!(matches!(state.mode, ViewMode::Log { tail: false, .. }));
+        assert_eq!(tail_count(&render_to_string(&mut state, 80, 24)), 1);
+
+        // SHIFT-`G` jumps to the bottom and resumes tailing.
+        state.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT));
+        assert!(matches!(state.mode, ViewMode::Log { tail: true, .. }));
+
+        // Scrolling up stops tailing again.
+        press(&mut state, KeyCode::Up);
+        assert!(matches!(state.mode, ViewMode::Log { tail: false, .. }));
+
+        // q returns to the consensus view.
+        press(&mut state, KeyCode::Char('q'));
+        assert!(matches!(state.mode, ViewMode::Consensus));
+    }
+
+    /// Small helper for assertion messages.
+    fn mode_name(mode: &ViewMode) -> &'static str {
+        match mode {
+            ViewMode::Consensus => "Consensus",
+            ViewMode::NumberEntry { .. } => "NumberEntry",
+            ViewMode::Log { .. } => "Log",
+        }
+    }
 
     #[test]
     fn test_compute_consensus_identical() {
@@ -680,6 +997,59 @@ mod tests {
 
         let consensus = compute_consensus(&hosts, &outputs);
         assert!(consensus.is_empty());
+    }
+
+    #[test]
+    fn test_host_for_window_number() {
+        let hosts = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        // 1-based: [1] -> first host, [3] -> last host
+        assert_eq!(host_for_window_number(&hosts, 1), Some("a"));
+        assert_eq!(host_for_window_number(&hosts, 3), Some("c"));
+        // 0 maps to nothing (window 0 is the watch view)
+        assert_eq!(host_for_window_number(&hosts, 0), None);
+        // Beyond the host count
+        assert_eq!(host_for_window_number(&hosts, 4), None);
+        // Empty host list
+        assert_eq!(host_for_window_number(&[], 1), None);
+    }
+
+    #[test]
+    fn test_handle_number_entry_key() {
+        let mut app = WatchApp::new(PathBuf::from("/tmp/does-not-matter"));
+        app.hosts = vec!["a".to_string(), "b".to_string()];
+
+        // Digit appends to the buffer
+        let mode = app.handle_number_entry_key("", KeyCode::Char('2'));
+        assert!(matches!(&mode, ViewMode::NumberEntry { buffer } if buffer == "2"));
+
+        // Backspace pops
+        let mode = app.handle_number_entry_key("12", KeyCode::Backspace);
+        assert!(matches!(&mode, ViewMode::NumberEntry { buffer } if buffer == "1"));
+
+        // Enter on a valid index opens that host's log, tailing by default
+        let mode = app.handle_number_entry_key("2", KeyCode::Enter);
+        assert!(matches!(&mode, ViewMode::Log { host, scroll, tail }
+            if host == "b" && *scroll == 0 && *tail));
+
+        // Enter on an out-of-range / empty / zero index returns to consensus
+        assert!(matches!(
+            app.handle_number_entry_key("9", KeyCode::Enter),
+            ViewMode::Consensus
+        ));
+        assert!(matches!(
+            app.handle_number_entry_key("", KeyCode::Enter),
+            ViewMode::Consensus
+        ));
+        assert!(matches!(
+            app.handle_number_entry_key("0", KeyCode::Enter),
+            ViewMode::Consensus
+        ));
+
+        // Esc cancels
+        assert!(matches!(
+            app.handle_number_entry_key("1", KeyCode::Esc),
+            ViewMode::Consensus
+        ));
     }
 
     #[test]
