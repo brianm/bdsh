@@ -142,9 +142,10 @@ fn run_command(
         let first_host_dir = output_dir.join(first_host);
         let first_script = generate_command_script(&first_host_dir, first_host, &cmd_str)?;
         let first_cmd = format!("sh {}", first_script.display());
+        let first_window_name = sanitize_window_name(first_host);
 
         tmux(socket_str, &[
-            "new-session", "-d", "-s", &session_name, "-n", first_host, &first_cmd,
+            "new-session", "-d", "-s", &session_name, "-n", &first_window_name, &first_cmd,
         ])?;
     } else {
         // First window (0) is watch mode
@@ -162,13 +163,14 @@ fn run_command(
         let window_index = i + host_window_offset;
 
         let host_cmd = format!("sh {}", host_script.display());
+        let window_name = sanitize_window_name(host);
 
         // First host already created if no_watch, otherwise create new window
         if no_watch && i == 0 {
             // Already created as session's first window
         } else {
             tmux(socket_str, &[
-                "new-window", "-t", &session_name, "-n", host, &host_cmd,
+                "new-window", "-t", &session_name, "-n", &window_name, &host_cmd,
             ])?;
         }
 
@@ -209,6 +211,15 @@ fn run_command(
     }
 
     Ok(())
+}
+
+/// Sanitize a host name for use as a tmux window name.
+///
+/// tmux rejects window names containing `.` or `:` (e.g. "badb.home"), so
+/// replace those characters. Windows are referenced by index elsewhere, so
+/// the name is purely cosmetic.
+fn sanitize_window_name(host: &str) -> String {
+    host.replace(['.', ':'], "_")
 }
 
 /// Run a tmux command with the given socket
@@ -276,4 +287,22 @@ exit $EXIT_CODE
     fs::set_permissions(&script_path, perms)?;
 
     Ok(script_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_window_name_replaces_dots_and_colons() {
+        assert_eq!(sanitize_window_name("badb.home"), "badb_home");
+        assert_eq!(sanitize_window_name("host.example.com"), "host_example_com");
+        assert_eq!(sanitize_window_name("[fe80::1]:22"), "[fe80__1]_22");
+    }
+
+    #[test]
+    fn sanitize_window_name_leaves_plain_names_unchanged() {
+        assert_eq!(sanitize_window_name("badb"), "badb");
+        assert_eq!(sanitize_window_name("web-01"), "web-01");
+    }
 }
